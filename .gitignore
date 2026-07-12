@@ -1,0 +1,45 @@
+# Build outputs
+/build/
+/cmake-build-*/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.wasm
+*.wasm.h
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# Third-party dependencies (managed separately, not committed)
+/SDL3-3.2.14/
+/sdl3/
+/sdl3-build/
+/wamr/
+/wamr-build/
+/wamr-src/
+/emsdk/
+
+# Downloaded archives
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary / backup files
+*.bak
+*.tmp
