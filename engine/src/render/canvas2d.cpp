@@ -188,6 +188,112 @@ void Canvas2D::stroke() {
     }
 }
 
+namespace {
+
+// Convert LUT8 / AlphaMask materials to a CPU-side RGBA buffer that SDL can
+// upload directly. ARGB8888 and RGB565 are uploaded with their native SDL
+// pixel formats instead to avoid channel-order issues.
+std::vector<uint8_t> materialToRGBA(const domi::Material& mat) {
+    const int count = mat.width * mat.height;
+    std::vector<uint8_t> rgba(count * 4, 0);
+
+    switch (mat.format) {
+        case domi::PixelFormat::LUT8: {
+            for (int i = 0; i < count; ++i) {
+                uint8_t idx = mat.pixels[i];
+                const domi::Color& c = idx < mat.palette.size()
+                                           ? mat.palette[idx]
+                                           : domi::Color(0, 0, 0, 1);
+                rgba[i * 4 + 0] = (uint8_t)(c.r * 255.0f);
+                rgba[i * 4 + 1] = (uint8_t)(c.g * 255.0f);
+                rgba[i * 4 + 2] = (uint8_t)(c.b * 255.0f);
+                rgba[i * 4 + 3] = (uint8_t)(c.a * 255.0f);
+            }
+            break;
+        }
+
+        case domi::PixelFormat::AlphaMask: {
+            for (int i = 0; i < count; ++i) {
+                uint8_t a = mat.pixels[i];
+                rgba[i * 4 + 0] = 255;
+                rgba[i * 4 + 1] = 255;
+                rgba[i * 4 + 2] = 255;
+                rgba[i * 4 + 3] = a;
+            }
+            break;
+        }
+
+        default:
+            break;
+    }
+
+    return rgba;
+}
+
+} // anonymous namespace
+
+void Canvas2D::drawMaterial(float x, float y, const Material& material) {
+    if (!renderer_ || material.width <= 0 || material.height <= 0) return;
+
+    SDL_PixelFormat sdlFormat = SDL_PIXELFORMAT_RGBA8888;
+    int pixelBytes = 4;
+    const uint8_t* srcPixels = NULL;
+    std::vector<uint8_t> converted;
+
+    switch (material.format) {
+        case PixelFormat::ARGB8888:
+            // Material stores bytes as A,R,G,B. SDL_PIXELFORMAT_ARGB32 is the
+            // platform-independent alias that guarantees this memory layout.
+            sdlFormat = SDL_PIXELFORMAT_ARGB32;
+            pixelBytes = 4;
+            srcPixels = material.pixels.data();
+            break;
+
+        case PixelFormat::RGB565:
+            sdlFormat = SDL_PIXELFORMAT_RGB565;
+            pixelBytes = 2;
+            srcPixels = material.pixels.data();
+            break;
+
+        case PixelFormat::LUT8:
+        case PixelFormat::AlphaMask:
+            // Converted to CPU-side R,G,B,A, so use the platform-independent
+            // RGBA32 alias.
+            sdlFormat = SDL_PIXELFORMAT_RGBA32;
+            pixelBytes = 4;
+            converted = materialToRGBA(material);
+            srcPixels = converted.data();
+            break;
+    }
+
+    SDL_Texture* tex = SDL_CreateTexture(renderer_, sdlFormat,
+                                         SDL_TEXTUREACCESS_STREAMING,
+                                         material.width, material.height);
+    if (!tex) return;
+
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+
+    void* pixels = NULL;
+    int pitch = 0;
+    if (SDL_LockTexture(tex, NULL, &pixels, &pitch)) {
+        int srcPitch = material.width * pixelBytes;
+        if (pitch == srcPitch) {
+            memcpy(pixels, srcPixels, material.height * srcPitch);
+        } else {
+            for (int row = 0; row < material.height; ++row) {
+                memcpy((uint8_t*)pixels + row * pitch,
+                       srcPixels + row * srcPitch,
+                       srcPitch);
+            }
+        }
+        SDL_UnlockTexture(tex);
+    }
+
+    SDL_FRect dst = { x, y, (float)material.width, (float)material.height };
+    SDL_RenderTexture(renderer_, tex, NULL, &dst);
+    SDL_DestroyTexture(tex);
+}
+
 void Canvas2D::begin3D() {
     if (!renderer_ || !target3D_ || in3D_) return;
     if (SDL_LockTexture(target3D_, NULL, &lockedPixels_, &lockedPitch_)) {

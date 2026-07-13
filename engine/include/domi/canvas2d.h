@@ -1,6 +1,7 @@
 #ifndef DOMI_CANVAS2D_H
 #define DOMI_CANVAS2D_H
 
+#include "domi/material.h"
 #include "domi/math.h"
 #include <vector>
 
@@ -47,6 +48,9 @@ public:
     void closePath();
     void fill();
     void stroke();
+
+    // Draw a generated material at (x, y). Handles all PixelFormat variants.
+    void drawMaterial(float x, float y, const Material& material);
 
     // 3D software rasterizer with z-buffer.
     // Call begin3D() before, end3D() after drawing 3D triangles.

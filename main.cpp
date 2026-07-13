@@ -7,6 +7,10 @@
 #include "domi/math.h"
 #include "domi/input.h"
 #include "domi/canvas2d.h"
+#include "tree_generator.h"
+#include "cloud_generator.h"
+#include "rock_generator.h"
+#include "house_generator.h"
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -33,19 +37,14 @@ private:
 
 class Game2DScene : public Scene {
 public:
-    Game2DScene() : carT_(0.0f), carSpeed_(0.25f), cloudOffset_(0.0f), cubeAngleX_(0.0f), cubeAngleY_(0.0f) {}
+    Game2DScene()
+        : carT_(0.0f), carSpeed_(0.25f), cloudOffset_(0.0f),
+          cubeAngleX_(0.0f), cubeAngleY_(0.0f) {}
 
     const char* name() const override { return "Game2DScene"; }
 
-    void load(World* world, ScriptSystem* script) override {
-        (void)world;
-        (void)script;
-    }
-
-    void unload(World* world, ScriptSystem* script) override {
-        (void)world;
-        (void)script;
-    }
+    void load(World* world, ScriptSystem* script) override;
+    void unload(World* world, ScriptSystem* script) override;
 
     void update(double dt) override {
         carT_ += carSpeed_ * dt;
@@ -70,11 +69,18 @@ public:
         canvas->fillRect(0, 0, 1280, 720);
 
         // Trees
-        drawTree(canvas, 180, 200);
-        drawTree(canvas, 1100, 160);
-        drawTree(canvas, 980, 450);
-        drawTree(canvas, 220, 520);
-        drawTree(canvas, 1150, 600);
+        drawTree(canvas, 180, 200, 0);
+        drawTree(canvas, 1100, 160, 1);
+        drawTree(canvas, 980, 450, 2);
+        drawTree(canvas, 220, 520, 3);
+        drawTree(canvas, 1150, 600, 4);
+
+        // House and rocks
+        drawHouse(canvas, 560, 230);
+        drawRock(canvas, 420, 260, 0);
+        drawRock(canvas, 460, 270, 1);
+        drawRock(canvas, 720, 580, 2);
+        drawRock(canvas, 760, 590, 3);
 
         // Diagonal asphalt road crossing the screen
         canvas->setFillColor(Color(0.35f, 0.35f, 0.35f));
@@ -103,9 +109,9 @@ public:
         }
 
         // Clouds
-        drawCloud(canvas, 200 + cloudOffset_, 120);
-        drawCloud(canvas, 600 + cloudOffset_ * 0.7f, 80);
-        drawCloud(canvas, 950 + cloudOffset_ * 1.2f, 150);
+        drawCloud(canvas, 200 + cloudOffset_, 120, 0);
+        drawCloud(canvas, 600 + cloudOffset_ * 0.7f, 80, 1);
+        drawCloud(canvas, 950 + cloudOffset_ * 1.2f, 150, 2);
 
         // Car
         float cx = -100 + carT_ * 1480;
@@ -123,23 +129,37 @@ private:
     float cubeAngleX_;
     float cubeAngleY_;
 
-    void drawTree(Canvas2D* canvas, float x, float y) {
-        canvas->setFillColor(Color(0.45f, 0.28f, 0.16f));
-        canvas->fillRect(x - 6, y + 20, 12, 30);
+    std::vector<Material> treeMaterials_;
+    std::vector<Material> cloudMaterials_;
+    std::vector<Material> rockMaterials_;
+    Material houseMaterial_;
 
-        canvas->setFillColor(Color(0.15f, 0.55f, 0.15f));
-        canvas->fillCircle(x, y, 28);
-        canvas->setFillColor(Color(0.22f, 0.68f, 0.22f));
-        canvas->fillCircle(x - 10, y + 8, 18);
-        canvas->fillCircle(x + 10, y + 8, 18);
+    void drawTree(Canvas2D* canvas, float x, float y, size_t index) {
+        if (!canvas || index >= treeMaterials_.size()) return;
+        const Material& m = treeMaterials_[index];
+        if (m.width == 0) return;
+        canvas->drawMaterial(x - m.width * 0.5f, y - m.height * 0.5f, m);
     }
 
-    void drawCloud(Canvas2D* canvas, float x, float y) {
-        canvas->setFillColor(Color(0.95f, 0.95f, 0.98f));
-        canvas->fillCircle(x, y, 32);
-        canvas->fillCircle(x + 28, y + 8, 26);
-        canvas->fillCircle(x + 52, y - 4, 22);
-        canvas->fillCircle(x + 22, y - 14, 24);
+    void drawCloud(Canvas2D* canvas, float x, float y, size_t index) {
+        if (!canvas || index >= cloudMaterials_.size()) return;
+        const Material& m = cloudMaterials_[index];
+        if (m.width == 0) return;
+        canvas->drawMaterial(x - m.width * 0.5f, y - m.height * 0.5f, m);
+    }
+
+    void drawRock(Canvas2D* canvas, float x, float y, size_t index) {
+        if (!canvas || index >= rockMaterials_.size()) return;
+        const Material& m = rockMaterials_[index];
+        if (m.width == 0) return;
+        canvas->drawMaterial(x - m.width * 0.5f, y - m.height * 0.5f, m);
+    }
+
+    void drawHouse(Canvas2D* canvas, float x, float y) {
+        if (!canvas || houseMaterial_.width == 0) return;
+        canvas->drawMaterial(x - houseMaterial_.width * 0.5f,
+                             y - houseMaterial_.height * 0.5f,
+                             houseMaterial_);
     }
 
     void drawCar(Canvas2D* canvas, float x, float y) {
@@ -254,6 +274,69 @@ private:
         }
     }
 };
+
+void Game2DScene::load(World* world, ScriptSystem* script) {
+    (void)world;
+    (void)script;
+
+    // Generate tree and cloud materials using the fluent generator API.
+    // Format can be changed to PixelFormat::RGB565, PixelFormat::LUT8,
+    // or PixelFormat::AlphaMask to experiment with different outputs.
+    // Generate several randomized variants for each material type so that the
+    // scene looks varied instead of repeating the same sprite.
+    treeMaterials_.clear();
+    for (int i = 0; i < 5; ++i) {
+        treeMaterials_.push_back(TreeGenerator()
+            .setSize(80, 80)
+            .setFormat(PixelFormat::ARGB8888)
+            .setSeed(1000u + i * 137u)
+            .setBaseColor(Color(0.15f, 0.55f, 0.15f, 1.0f))
+            .setHighlightColor(Color(0.22f, 0.68f, 0.22f, 1.0f))
+            .setDetailColor(Color(0.45f, 0.28f, 0.16f, 1.0f))
+            .setTrunkSize(14, 32)
+            .setFoliageRadius(30)
+            .build());
+    }
+
+    rockMaterials_.clear();
+    for (int i = 0; i < 4; ++i) {
+        rockMaterials_.push_back(RockGenerator()
+            .setSize(50, 40)
+            .setFormat(PixelFormat::ARGB8888)
+            .setSeed(2000u + i * 93u)
+            .setBaseColor(Color(0.55f, 0.55f, 0.55f, 1.0f))
+            .setRockCount(4)
+            .setRockRadius(16)
+            .build());
+    }
+
+    houseMaterial_ = HouseGenerator()
+        .setSize(90, 90)
+        .setFormat(PixelFormat::ARGB8888)
+        .setSeed(3000u)
+        .setBaseColor(Color(0.9f, 0.85f, 0.6f, 1.0f))
+        .setDetailColor(Color(0.65f, 0.25f, 0.2f, 1.0f))
+        .setWallSize(55, 45)
+        .setRoofHeight(28)
+        .build();
+
+    cloudMaterials_.clear();
+    for (int i = 0; i < 3; ++i) {
+        cloudMaterials_.push_back(CloudGenerator()
+            .setSize(120, 80)
+            .setFormat(PixelFormat::ARGB8888)
+            .setSeed(4000u + i * 211u)
+            .setBaseColor(Color(0.95f, 0.95f, 0.98f, 1.0f))
+            .setPuffCount(5)
+            .setPuffRadius(34)
+            .build());
+    }
+}
+
+void Game2DScene::unload(World* world, ScriptSystem* script) {
+    (void)world;
+    (void)script;
+}
 
 class Game3DScene : public Scene {
 public:

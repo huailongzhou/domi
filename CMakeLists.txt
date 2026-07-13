@@ -34,10 +34,16 @@ add_library(domi_engine STATIC
     engine/src/render/canvas2d.cpp
     engine/src/scene/scene_manager.cpp
     engine/src/audio/audio.cpp
+    tools/generators/material_generator.cpp
+    tools/generators/tree_generator.cpp
+    tools/generators/cloud_generator.cpp
+    tools/generators/rock_generator.cpp
+    tools/generators/house_generator.cpp
 )
 
 target_include_directories(domi_engine PUBLIC
     ${CMAKE_SOURCE_DIR}/engine/include
+    ${CMAKE_SOURCE_DIR}/tools/generators
     ${WAMR_ROOT}/include
 )
 

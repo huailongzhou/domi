@@ -21,10 +21,16 @@ compile_commands.json
 /SDL3-3.2.14/
 /sdl3/
 /sdl3-build/
+/sdl3-mingw/
+/sdl3-mingw-build/
 /wamr/
 /wamr-build/
 /wamr-src/
+/wamr-mingw/
+/wamr-mingw-build/
+/wamr-mingw-include/
 /emsdk/
+/wasm-micro-runtime-WAMR-2.4.3/
 
 # Downloaded archives
 *.tar.gz

@@ -67,6 +67,10 @@ struct Color {
     float r, g, b, a;
     Color() : r(1), g(1), b(1), a(1) {}
     Color(float r_, float g_, float b_, float a_ = 1.0f) : r(r_), g(g_), b(b_), a(a_) {}
+    bool operator==(const Color& o) const {
+        return r == o.r && g == o.g && b == o.b && a == o.a;
+    }
+    bool operator!=(const Color& o) const { return !(*this == o); }
     uint32_t toRGBA() const {
         return ((uint32_t)(r * 255) << 24) | ((uint32_t)(g * 255) << 16) |
                ((uint32_t)(b * 255) << 8) | (uint32_t)(a * 255);
