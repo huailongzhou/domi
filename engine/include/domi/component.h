@@ -17,7 +17,8 @@ struct SpriteComponent {
     Color color;
     bool flipX;
     bool flipY;
-    SpriteComponent() : sourceRect(), color(1,1,1,1), flipX(false), flipY(false) {}
+    bool castShadow;
+    SpriteComponent() : sourceRect(), color(1,1,1,1), flipX(false), flipY(false), castShadow(true) {}
 };
 
 struct MeshComponent {

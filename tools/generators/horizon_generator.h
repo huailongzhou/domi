@@ -2,6 +2,7 @@
 #define TOOLS_GENERATORS_HORIZON_GENERATOR_H
 
 #include "material_generator.h"
+#include <vector>
 
 namespace domi {
 
@@ -17,6 +18,13 @@ public:
     HorizonGenerator& setHillHeight(int minHeight, int maxHeight);
 
     Material build() override;
+
+    // Return the sky/ground silhouette for each x column, in texture-local
+    // coordinates (0 = top of the strip, height_-1 = bottom). A sprite whose
+    // bottom is below this line is in front of the hills; a sprite whose bottom
+    // is at or above this line is behind the horizon and should not cast
+    // shadows on the ground.
+    std::vector<int> buildSkyline();
 
 private:
     Color skyColor_;

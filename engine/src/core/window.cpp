@@ -28,6 +28,11 @@ bool Window::create(const std::string& title, int width, int height) {
         return false;
     }
 
+    // Enable vertical sync to avoid tearing/flickering on high-refresh displays.
+    if (!SDL_SetRenderVSync(renderer_, 1)) {
+        fprintf(stderr, "Failed to enable VSync: %s\n", SDL_GetError());
+    }
+
     // Raise and focus the window so keyboard input is received immediately.
     SDL_RaiseWindow(window_);
     SDL_SetWindowKeyboardGrab(window_, true);

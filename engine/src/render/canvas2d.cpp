@@ -90,7 +90,9 @@ Canvas2D::Canvas2D(SDL_Renderer* renderer)
       currentTarget_(NULL) {
     if (renderer_) {
         SDL_GetRenderOutputSize(renderer_, &width_, &height_);
-        target3D_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA8888,
+        // Use the platform-independent RGBA32 format so the locked pixel
+        // memory is always laid out as R, G, B, A regardless of endianness.
+        target3D_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32,
                                       SDL_TEXTUREACCESS_STREAMING, width_, height_);
         if (target3D_) {
             SDL_SetTextureBlendMode(target3D_, SDL_BLENDMODE_BLEND);
@@ -489,12 +491,13 @@ void Canvas2D::fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
     }
 }
 
-void Canvas2D::fillCube3D(float cx, float cy, float size, float rotX, float rotY, const Color& color) {
-    fillBox3D(cx, cy, size, size, size, rotX, rotY, color);
+void Canvas2D::fillCube3D(float cx, float cy, float size, float rotX, float rotY,
+                          float rotZ, const Color& color) {
+    fillBox3D(cx, cy, size, size, size, rotX, rotY, rotZ, color);
 }
 
 void Canvas2D::fillBox3D(float cx, float cy, float sx, float sy, float sz,
-                         float rotX, float rotY, const Color& color) {
+                         float rotX, float rotY, float rotZ, const Color& color) {
     if (!in3D_) return;
 
     Vec3 v[8] = {
@@ -512,17 +515,23 @@ void Canvas2D::fillBox3D(float cx, float cy, float sx, float sy, float sz,
 
     float cxr = SDL_cosf(rotX), sxr = SDL_sinf(rotX);
     float cyr = SDL_cosf(rotY), syr = SDL_sinf(rotY);
+    float czr = SDL_cosf(rotZ), szr = SDL_sinf(rotZ);
 
     auto rotate = [&](const Vec3& p) -> Vec3 {
+        // Rotate around X, then Y, then Z.
         Vec3 r1(p.x, p.y * cxr - p.z * sxr, p.y * sxr + p.z * cxr);
-        return Vec3(r1.x * cyr + r1.z * syr, r1.y, -r1.x * syr + r1.z * cyr);
+        Vec3 r2(r1.x * cyr + r1.z * syr, r1.y, -r1.x * syr + r1.z * cyr);
+        return Vec3(r2.x * czr - r2.y * szr, r2.x * szr + r2.y * czr, r2.z);
     };
 
-    const float cameraDist = 3.0f;
-    const float projScale = 1.0f;
+    // Camera looks down +Z from -cameraDist. Keep objects near z=0 so that
+    // 1 world unit maps to roughly 1 screen pixel, and clamp the denominator
+    // to prevent nearby vertices from exploding.
+    const float cameraDist = 60.0f;
+    const float projScale = 60.0f;
     auto project = [&](const Vec3& p) -> Vec2 {
         float denom = p.z + cameraDist;
-        if (denom < 0.01f) denom = 0.01f;
+        if (denom < 1.0f) denom = 1.0f;
         return Vec2(cx + p.x / denom * projScale, cy - p.y / denom * projScale);
     };
 
@@ -535,10 +544,15 @@ void Canvas2D::fillBox3D(float cx, float cy, float sx, float sy, float sz,
         Vec3 b = tv[face.i[1]];
         Vec3 c_ = tv[face.i[2]];
         Vec3 n = Vec3::cross(b - a, c_ - a);
-        if (n.z >= 0.0f) continue;
+        // Camera is at -Z looking toward +Z. A face is visible when its
+        // outward normal points toward the camera, i.e. has a negative Z
+        // component. Perpendicular faces (n.z == 0) are kept as well.
+        if (n.z > 0.0f) continue;
 
-        float l = -n.z / n.length();
-        if (l < 0.25f) l = 0.25f;
+        // Light from above: brighter when the face normal points upward.
+        float ny = n.y / n.length();
+        float l = 0.65f + 0.35f * ny;
+        if (l < 0.4f) l = 0.4f;
         if (l > 1.0f) l = 1.0f;
         Color shaded(color.r * l, color.g * l, color.b * l, color.a);
 
@@ -549,6 +563,60 @@ void Canvas2D::fillBox3D(float cx, float cy, float sx, float sy, float sz,
 
         fillTriangle3D(p0, p1, p2, a.z, b.z, c_.z, shaded);
         fillTriangle3D(p0, p2, p3, a.z, c_.z, tv[face.i[3]].z, shaded);
+    }
+}
+
+void Canvas2D::drawMesh3D(float cx, float cy, float scale,
+                          float rotX, float rotY, float rotZ,
+                          const Vec3* vertices, int vertexCount,
+                          const int* indices, int triangleCount,
+                          const Color& color) {
+    if (!in3D_ || !vertices || vertexCount <= 0 || !indices || triangleCount <= 0) return;
+
+    float cxr = SDL_cosf(rotX), sxr = SDL_sinf(rotX);
+    float cyr = SDL_cosf(rotY), syr = SDL_sinf(rotY);
+    float czr = SDL_cosf(rotZ), szr = SDL_sinf(rotZ);
+
+    auto rotate = [&](const Vec3& p) -> Vec3 {
+        Vec3 r1(p.x, p.y * cxr - p.z * sxr, p.y * sxr + p.z * cxr);
+        Vec3 r2(r1.x * cyr + r1.z * syr, r1.y, -r1.x * syr + r1.z * cyr);
+        return Vec3(r2.x * czr - r2.y * szr, r2.x * szr + r2.y * czr, r2.z);
+    };
+
+    const float cameraDist = 60.0f;
+    const float projScale = 60.0f * scale;
+    auto project = [&](const Vec3& p) -> Vec2 {
+        float denom = p.z + cameraDist;
+        if (denom < 1.0f) denom = 1.0f;
+        return Vec2(cx + p.x / denom * projScale, cy - p.y / denom * projScale);
+    };
+
+    std::vector<Vec3> tv(vertexCount);
+    for (int i = 0; i < vertexCount; ++i) tv[i] = rotate(vertices[i]);
+
+    for (int t = 0; t < triangleCount; ++t) {
+        int i0 = indices[t * 3 + 0];
+        int i1 = indices[t * 3 + 1];
+        int i2 = indices[t * 3 + 2];
+        if (i0 < 0 || i0 >= vertexCount || i1 < 0 || i1 >= vertexCount || i2 < 0 || i2 >= vertexCount) continue;
+
+        const Vec3& a = tv[i0];
+        const Vec3& b = tv[i1];
+        const Vec3& c_ = tv[i2];
+
+        Vec3 n = Vec3::cross(b - a, c_ - a);
+        if (n.z > 0.0f) continue;
+
+        float ny = n.y / n.length();
+        float l = 0.65f + 0.35f * ny;
+        if (l < 0.4f) l = 0.4f;
+        if (l > 1.0f) l = 1.0f;
+        Color shaded(color.r * l, color.g * l, color.b * l, color.a);
+
+        Vec2 p0 = project(a);
+        Vec2 p1 = project(b);
+        Vec2 p2 = project(c_);
+        fillTriangle3D(p0, p1, p2, a.z, b.z, c_.z, shaded);
     }
 }
 

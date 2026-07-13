@@ -82,6 +82,7 @@ public:
     // deterministic output (seed 0). Different seeds give different shapes.
     Derived& setSeed(unsigned seed) {
         rngState_ = seed;
+        rngSeed_ = seed;
         rngSet_ = true;
         return derived();
     }
@@ -112,8 +113,20 @@ protected:
         return randomFloat(0.0f, 1.0f) < probability;
     }
 
+    // Reset the RNG to the seed set by setSeed(), or to 0 if no seed was set.
+    // Call this at the start of build() if the same generator instance may be
+    // used to produce multiple related outputs (e.g. a material + a height map).
+    void resetRng() {
+        if (rngSet_) {
+            rngState_ = rngSeed_;
+        } else {
+            rngState_ = 0;
+        }
+    }
+
 private:
     unsigned rngState_ = 0;
+    unsigned rngSeed_ = 0;
     bool rngSet_ = false;
 
     uint32_t nextRandom() {

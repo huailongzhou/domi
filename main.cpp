@@ -14,6 +14,8 @@
 #include "rock_generator.h"
 #include "house_generator.h"
 #include "horizon_generator.h"
+#include "3d/cube3d_generator.h"
+#include "3d/car3d_generator.h"
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -40,9 +42,13 @@ private:
 
 class Game2DScene : public Scene {
 public:
+    static constexpr int kCloudCount = 6;
+    static constexpr float kHorizonY = 240.0f;
+
     Game2DScene()
         : carT_(0.0f), carSpeed_(0.25f), cloudOffset_(0.0f),
-          cubeAngleX_(0.0f), cubeAngleY_(0.0f), sunEntity_(0) {}
+          cubeAngleX_(0.0f), cubeAngleY_(0.0f), sunEntity_(0),
+          useZBuffer_(true) {}
 
     const char* name() const override { return "Game2DScene"; }
 
@@ -64,6 +70,12 @@ public:
         if (App::instance().getInput()->isKeyPressed(SDL_SCANCODE_R)) {
             App::instance().getSceneManager()->setNext(new SecondScene());
         }
+
+        if (App::instance().getInput()->isKeyPressed(SDL_SCANCODE_Z)) {
+            useZBuffer_ = !useZBuffer_;
+            fprintf(stderr, "[GAME2D] Render mode: %s\n",
+                    useZBuffer_ ? "z-buffer" : "painter");
+        }
     }
 
     void render(Canvas2D* canvas) override {
@@ -83,7 +95,7 @@ public:
         });
 
         // Diagonal asphalt road across the grass. Sort by its lowest y.
-        list.add(RenderLayer::Road, 560.0f, [&, canvas]() {
+        list.add(RenderLayer::Surface, 560.0f, [&, canvas]() {
             canvas->setFillColor(Color(0.35f, 0.35f, 0.35f));
             canvas->beginPath();
             canvas->moveTo(-121, 300);
@@ -95,7 +107,7 @@ public:
         });
 
         // Dashed yellow center line.
-        list.add(RenderLayer::RoadMarking, 560.0f, [&, canvas]() {
+        list.add(RenderLayer::Surface, 560.0f, [&, canvas]() {
             canvas->setStrokeColor(Color(0.9f, 0.85f, 0.3f));
             canvas->setLineWidth(4.0f);
             for (int i = 0; i < 12; ++i) {
@@ -127,21 +139,32 @@ public:
         list.add(RenderLayer::Object, 560.0f, [&, canvas]() { drawRock(canvas, 720, 540, 2); });
         list.add(RenderLayer::Object, 580.0f, [&, canvas]() { drawRock(canvas, 760, 560, 3); });
 
-        // Clouds. Sort by bottom edge (center y + half height).
-        list.add(RenderLayer::Cloud, 160.0f, [&, canvas]() { drawCloud(canvas, 200 + cloudOffset_, 120, 0); });
-        list.add(RenderLayer::Cloud, 120.0f, [&, canvas]() { drawCloud(canvas, 600 + cloudOffset_ * 0.7f, 80, 1); });
-        list.add(RenderLayer::Cloud, 190.0f, [&, canvas]() { drawCloud(canvas, 950 + cloudOffset_ * 1.2f, 150, 2); });
+        // Clouds. Sort by center y so lower (farther back) clouds draw first.
+        // All y values are within the sky band; some overlap the hills while
+        // others sit clearly above them.
+        list.add(RenderLayer::Background, 100.0f, [&, canvas]() { drawCloud(canvas, 150 + cloudOffset_, 100, 0); });
+        list.add(RenderLayer::Background,  80.0f, [&, canvas]() { drawCloud(canvas, 450 + cloudOffset_ * 0.7f, 80, 1); });
+        list.add(RenderLayer::Background, 130.0f, [&, canvas]() { drawCloud(canvas, 800 + cloudOffset_ * 1.2f, 130, 2); });
+        list.add(RenderLayer::Background, 170.0f, [&, canvas]() { drawCloud(canvas, 250 + cloudOffset_ * 0.5f, 170, 3); });
+        list.add(RenderLayer::Background, 200.0f, [&, canvas]() { drawCloud(canvas, 650 + cloudOffset_ * 0.9f, 200, 4); });
+        list.add(RenderLayer::Background, 230.0f, [&, canvas]() { drawCloud(canvas, 1050 + cloudOffset_ * 1.1f, 230, 5); });
 
-        // Car (follows the road center line). Put it in the Object layer so it
-        // interleaves with trees/houses based on bottom-edge y-coordinate.
+        // 3D car: follows the road, drawn in the Object layer.
         float cx = -100 + carT_ * 1480;
         float cy = 330 + carT_ * 200;
-        const float carHeight = 20.0f;
-        list.add(RenderLayer::Object, cy + carHeight * 0.5f, [&, canvas]() { drawCar(canvas, cx, cy); });
+        list.add(RenderLayer::Object, cy, [&, canvas, cx, cy]() {
+            canvas->setRenderMode(useZBuffer_ ? RenderMode::ZBUFFER : RenderMode::PAINTER);
+            canvas->begin3D();
+            draw3DCar(canvas, cx, cy);
+            canvas->end3D();
+        });
 
-        // A rotating 3D-style cube drawn with Canvas2D (software projection).
+        // 3D rotating cube: drawn as a screen-space effect on top of the scene.
         list.add(RenderLayer::Effect, 550.0f, [&, canvas]() {
+            canvas->setRenderMode(useZBuffer_ ? RenderMode::ZBUFFER : RenderMode::PAINTER);
+            canvas->begin3D();
             drawCube3D(canvas, 1050.0f, 520.0f, 60.0f, cubeAngleX_, cubeAngleY_);
+            canvas->end3D();
         });
 
         list.flush();
@@ -153,6 +176,7 @@ private:
     float cloudOffset_;
     float cubeAngleX_;
     float cubeAngleY_;
+    bool useZBuffer_;
 
     Entity sunEntity_;
     std::vector<Entity> cloudEntities_;
@@ -163,6 +187,7 @@ private:
     std::vector<Material> rockMaterials_;
     Material houseMaterial_;
     Material horizonMaterial_;
+    std::vector<int> horizonSkyline_; // texture-local hill-top y per x column
 
     void createShadowCasters(World* world);
     void updateCloudShadowCasters();
@@ -233,103 +258,31 @@ private:
         canvas->fillCircle(x + 12, y + 10, 5);
     }
 
+    void draw3DCar(Canvas2D* canvas, float x, float y) {
+        if (!canvas) return;
+        float time = (float)App::instance().getTime();
+        float yaw = carT_ * 0.25f;
+        float roll = SDL_sinf(time * 10.0f) * 0.03f;
+
+        static const std::vector<Mesh3D> carMeshes = Car3DGenerator().build();
+
+        for (const Mesh3D& mesh : carMeshes) {
+            canvas->drawMesh3D(x, y, 1.0f, 0.0f, 0.0f, yaw + roll,
+                               mesh.vertices.data(), (int)mesh.vertices.size(),
+                               mesh.indices.data(), mesh.triangleCount(),
+                               mesh.color);
+        }
+    }
+
     void drawCube3D(Canvas2D* canvas, float cx, float cy, float size, float ax, float ay) {
-        // Local cube vertices: centered at origin, edge length 1.
-        Vec3 v[8] = {
-            Vec3(-0.5f, -0.5f, -0.5f), Vec3( 0.5f, -0.5f, -0.5f),
-            Vec3( 0.5f,  0.5f, -0.5f), Vec3(-0.5f,  0.5f, -0.5f),
-            Vec3(-0.5f, -0.5f,  0.5f), Vec3( 0.5f, -0.5f,  0.5f),
-            Vec3( 0.5f,  0.5f,  0.5f), Vec3(-0.5f,  0.5f,  0.5f)
-        };
+        if (!canvas) return;
+        static const std::vector<Mesh3D> cubeFaces = Cube3DGenerator().setSize(1.0f).build();
 
-        // Faces defined counter-clockwise when viewed from outside.
-        // Winding order verified so that cross(edge1, edge2) points outward.
-        struct FaceDef { int i[4]; Color color; };
-        FaceDef faces[6] = {
-            { {0, 3, 2, 1}, Color(1.0f, 0.2f, 0.2f) }, // front  (-Z)
-            { {5, 6, 7, 4}, Color(0.2f, 1.0f, 0.2f) }, // back   (+Z)
-            { {3, 7, 6, 2}, Color(0.2f, 0.2f, 1.0f) }, // top    (+Y)
-            { {4, 0, 1, 5}, Color(1.0f, 1.0f, 0.2f) }, // bottom (-Y)
-            { {1, 2, 6, 5}, Color(1.0f, 0.2f, 1.0f) }, // right  (+X)
-            { {4, 7, 3, 0}, Color(0.2f, 1.0f, 1.0f) }  // left   (-X)
-        };
-
-        // Precompute rotation.
-        float cxr = SDL_cosf(ax), sxr = SDL_sinf(ax);
-        float cyr = SDL_cosf(ay), syr = SDL_sinf(ay);
-
-        auto rotate = [&](const Vec3& p) -> Vec3 {
-            Vec3 r1(p.x, p.y * cxr - p.z * sxr, p.y * sxr + p.z * cxr);
-            return Vec3(r1.x * cyr + r1.z * syr, r1.y, -r1.x * syr + r1.z * cyr);
-        };
-
-        const float cameraDist = 3.0f;
-        const float projScale = size;
-
-        auto project = [&](const Vec3& p) -> Vec2 {
-            float denom = p.z + cameraDist;
-            if (denom < 0.01f) denom = 0.01f;
-            return Vec2(cx + p.x / denom * projScale, cy - p.y / denom * projScale);
-        };
-
-        // Transform vertices once.
-        Vec3 tv[8];
-        for (int i = 0; i < 8; ++i) tv[i] = rotate(v[i]);
-
-        struct VisibleFace {
-            int i[4];
-            Color color;
-            float depth;
-            float light;
-        };
-        VisibleFace visible[6];
-        int visibleCount = 0;
-
-        for (int f = 0; f < 6; ++f) {
-            const FaceDef& face = faces[f];
-            Vec3 a = tv[face.i[0]];
-            Vec3 b = tv[face.i[1]];
-            Vec3 c_ = tv[face.i[2]];
-
-            // Camera looks down +Z from -cameraDist; visible faces have outward normal.z < 0.
-            Vec3 n = Vec3::cross(b - a, c_ - a);
-            if (n.z >= 0.0f) continue;
-
-            float l = -n.z / n.length();
-            if (l < 0.3f) l = 0.3f;
-            if (l > 1.0f) l = 1.0f;
-
-            float depth = (a.z + b.z + c_.z + tv[face.i[3]].z) * 0.25f;
-            VisibleFace& vf = visible[visibleCount++];
-            for (int k = 0; k < 4; ++k) vf.i[k] = face.i[k];
-            vf.color = face.color;
-            vf.depth = depth;
-            vf.light = l;
-        }
-
-        // Painter's algorithm: draw farther faces first (larger depth first).
-        for (int i = 0; i < visibleCount - 1; ++i) {
-            for (int j = i + 1; j < visibleCount; ++j) {
-                if (visible[i].depth < visible[j].depth) {
-                    VisibleFace tmp = visible[i];
-                    visible[i] = visible[j];
-                    visible[j] = tmp;
-                }
-            }
-        }
-
-        for (int f = 0; f < visibleCount; ++f) {
-            const VisibleFace& vf = visible[f];
-            canvas->setFillColor(Color(vf.color.r * vf.light, vf.color.g * vf.light, vf.color.b * vf.light));
-            canvas->beginPath();
-            Vec2 p0 = project(tv[vf.i[0]]);
-            canvas->moveTo(p0.x, p0.y);
-            for (int k = 1; k < 4; ++k) {
-                Vec2 p = project(tv[vf.i[k]]);
-                canvas->lineTo(p.x, p.y);
-            }
-            canvas->closePath();
-            canvas->fill();
+        for (const Mesh3D& face : cubeFaces) {
+            canvas->drawMesh3D(cx, cy, size, ax, ay, 0.0f,
+                               face.vertices.data(), (int)face.vertices.size(),
+                               face.indices.data(), face.triangleCount(),
+                               face.color);
         }
     }
 };
@@ -383,7 +336,7 @@ void Game2DScene::load(World* world, ScriptSystem* script) {
         .build();
 
     cloudMaterials_.clear();
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < kCloudCount; ++i) {
         cloudMaterials_.push_back(CloudGenerator()
             .setSize(120, 80)
             .setFormat(PixelFormat::ARGB8888)
@@ -394,16 +347,17 @@ void Game2DScene::load(World* world, ScriptSystem* script) {
             .build());
     }
 
-    horizonMaterial_ = HorizonGenerator()
-        .setSize(1280, 120)
+    HorizonGenerator horizonGen;
+    horizonGen.setSize(1280, 120)
         .setFormat(PixelFormat::ARGB8888)
         .setSeed(5000u)
         .setBaseColor(Color(0.28f, 0.72f, 0.28f, 1.0f))
         .setSkyColor(Color(0.12f, 0.12f, 0.16f, 1.0f))
         .setHillColor(Color(0.15f, 0.40f, 0.15f, 1.0f))
         .setHillCount(5)
-        .setHillHeight(25, 70)
-        .build();
+        .setHillHeight(25, 70);
+    horizonMaterial_ = horizonGen.build();
+    horizonSkyline_ = horizonGen.buildSkyline();
 
     createShadowCasters(world);
 }
@@ -429,7 +383,7 @@ void Game2DScene::createShadowCasters(World* world) {
 
     // Clouds: alpha-zero sprites that only cast shadows.
     cloudEntities_.clear();
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < kCloudCount; ++i) {
         Entity cloud = world->createEntity();
         TransformComponent* t = world->addComponent<TransformComponent>(cloud);
         t->transform.scale = Vec3(1.2f, 0.8f, 1.0f);
@@ -443,20 +397,39 @@ void Game2DScene::createShadowCasters(World* world) {
 
 void Game2DScene::updateCloudShadowCasters() {
     World* world = App::instance().getWorld();
-    if (!world || cloudEntities_.size() < 3) return;
+    if (!world || cloudEntities_.size() < (size_t)kCloudCount) return;
 
     struct CloudPos { float x, y; };
-    CloudPos positions[3] = {
-        { 200.0f + cloudOffset_, 120.0f },
-        { 600.0f + cloudOffset_ * 0.7f, 80.0f },
-        { 950.0f + cloudOffset_ * 1.2f, 150.0f }
+    CloudPos positions[kCloudCount] = {
+        { 150.0f + cloudOffset_,          100.0f },
+        { 450.0f + cloudOffset_ * 0.7f,    80.0f },
+        { 800.0f + cloudOffset_ * 1.2f,   130.0f },
+        { 250.0f + cloudOffset_ * 0.5f,   170.0f },
+        { 650.0f + cloudOffset_ * 0.9f,   200.0f },
+        { 1050.0f + cloudOffset_ * 1.1f,  230.0f }
     };
 
-    for (int i = 0; i < 3; ++i) {
+    const float horizonDrawY = 120.0f;
+    const float cloudHalfH = 40.0f;
+    const int skylineW = static_cast<int>(horizonSkyline_.size());
+
+    for (int i = 0; i < kCloudCount; ++i) {
         TransformComponent* t = world->getComponent<TransformComponent>(cloudEntities_[i]);
+        SpriteComponent* s = world->getComponent<SpriteComponent>(cloudEntities_[i]);
         if (t) {
             t->transform.position.x = positions[i].x;
             t->transform.position.y = positions[i].y;
+        }
+
+        // A cloud casts a shadow only if it is clearly above the horizon hills.
+        // Compare the cloud's bottom edge against the hill skyline at its x.
+        if (s && skylineW > 0) {
+            int idx = static_cast<int>(positions[i].x);
+            if (idx < 0) idx = 0;
+            if (idx >= skylineW) idx = skylineW - 1;
+            float cloudBottom = positions[i].y + cloudHalfH;
+            float screenSkyline = horizonDrawY + static_cast<float>(horizonSkyline_[idx]);
+            s->castShadow = (cloudBottom < screenSkyline);
         }
     }
 }

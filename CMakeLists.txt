@@ -49,6 +49,9 @@ add_library(domi_engine STATIC
     tools/generators/rock_generator.cpp
     tools/generators/house_generator.cpp
     tools/generators/horizon_generator.cpp
+    tools/generators/3d/cube3d_generator.cpp
+    tools/generators/3d/car3d_generator.cpp
+    tools/generators/3d/tree3d_generator.cpp
 )
 
 target_include_directories(domi_engine PUBLIC

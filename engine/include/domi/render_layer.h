@@ -3,17 +3,17 @@
 
 namespace domi {
 
-// Standard 2D render layers. Lower values are drawn first (farther back).
+// Abstract 2D render layers ordered from back to front.
+// The numeric spacing leaves room for custom sub-layers.
 enum class RenderLayer {
-    Background = 0,
-    Ground     = 100,
-    Road       = 200,
-    RoadMarking= 250,
-    Object     = 300, // trunks, vehicles, houses, rocks
-    Canopy     = 350, // tree foliage rendered above objects
-    Cloud      = 500,
-    Effect     = 600,
-    UI         = 700
+    Background = 0,   // sky, horizon, far scenery
+    Ground     = 100, // terrain, grass, water
+    Surface    = 200, // roads, paths, floor markings
+    Object     = 300, // props, vehicles, buildings, characters
+    Canopy     = 400, // foliage, roofs, anything above objects
+    Effect     = 500, // particles, lights, screen-space effects
+    Overlay    = 600, // full-screen overlays, vignettes
+    UI         = 700  // menus, HUD, buttons
 };
 
 } // namespace domi

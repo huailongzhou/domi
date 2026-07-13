@@ -79,9 +79,21 @@ public:
     void end3D();
     void fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
                         float za, float zb, float zc, const Color& color);
-    void fillCube3D(float cx, float cy, float size, float rotX, float rotY, const Color& color);
+    void fillCube3D(float cx, float cy, float size, float rotX, float rotY,
+                    float rotZ = 0.0f, const Color& color = Color(1, 1, 1, 1));
     void fillBox3D(float cx, float cy, float sx, float sy, float sz,
-                   float rotX, float rotY, const Color& color);
+                   float rotX, float rotY, float rotZ = 0.0f,
+                   const Color& color = Color(1, 1, 1, 1));
+
+    // Draw an arbitrary indexed triangle mesh through the software rasterizer.
+    // vertices:   array of local-space positions
+    // indices:    triangle list (3 indices per triangle)
+    // triangleCount: number of triangles
+    void drawMesh3D(float cx, float cy, float scale,
+                    float rotX, float rotY, float rotZ,
+                    const Vec3* vertices, int vertexCount,
+                    const int* indices, int triangleCount,
+                    const Color& color);
 
 private:
     SDL_Renderer* renderer_;

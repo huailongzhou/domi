@@ -53,6 +53,8 @@ HorizonGenerator& HorizonGenerator::setHillHeight(int minHeight, int maxHeight) 
 }
 
 Material HorizonGenerator::build() {
+    resetRng();
+
     std::vector<uint8_t> rgba(width_ * height_ * 4, 0);
 
     // Fill with transparent sky color.
@@ -145,6 +147,46 @@ Material HorizonGenerator::build() {
     }
 
     return convert(width_, height_, format_, rgba);
+}
+
+std::vector<int> HorizonGenerator::buildSkyline() {
+    resetRng();
+
+    std::vector<int> skyline(width_, height_);
+
+    for (int layer = 0; layer < hillCount_; ++layer) {
+        float depth = static_cast<float>(layer + 1) / static_cast<float>(hillCount_);
+        int minH = hillMinHeight_ + static_cast<int>((hillMaxHeight_ - hillMinHeight_) * (1.0f - depth) * 0.5f);
+        int maxH = hillMaxHeight_ - static_cast<int>((hillMaxHeight_ - hillMinHeight_) * depth * 0.3f);
+        int baseHeight = minH + randomInt(0, maxH - minH);
+
+        float phase1 = randomFloat(0.0f, 6.2831853f);
+        float phase2 = randomFloat(0.0f, 6.2831853f);
+        float freq1 = randomFloat(0.003f, 0.012f);
+        float freq2 = randomFloat(0.01f, 0.03f);
+        float amp1 = randomFloat(0.4f, 0.8f) * baseHeight;
+        float amp2 = randomFloat(0.1f, 0.25f) * baseHeight;
+        float noiseFreq = randomFloat(0.02f, 0.06f);
+        float noiseAmp = randomFloat(0.15f, 0.3f) * baseHeight;
+
+        for (int x = 0; x < width_; ++x) {
+            float nx = static_cast<float>(x);
+            float yf = static_cast<float>(baseHeight)
+                + amp1 * std::sin(nx * freq1 + phase1)
+                + amp2 * std::sin(nx * freq2 + phase2)
+                + noiseAmp * noise1D(nx * noiseFreq);
+            int hillTop = height_ - static_cast<int>(yf);
+            if (hillTop < 0) hillTop = 0;
+            if (hillTop >= height_) hillTop = height_ - 1;
+            // The frontmost hills occlude sprites; track the highest (smallest y)
+            // silhouette across all layers.
+            if (hillTop < skyline[x]) {
+                skyline[x] = hillTop;
+            }
+        }
+    }
+
+    return skyline;
 }
 
 } // namespace domi

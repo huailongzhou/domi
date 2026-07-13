@@ -41,13 +41,14 @@ void ShadowPass::record(CommandBuffer& cmd, RenderContext& ctx) {
     // Ground starts at 1/3 of the screen height; the upper 2/3 is grass.
     float groundY = ctx.height * (1.0f / 3.0f);
 
-    // Project a shadow from each cloud caster onto the ground.
+    // Project a shadow from each shadow-casting sprite onto the ground.
     if (ctx.world) {
         std::vector<Entity> entities = ctx.world->queryEntitiesWith(
             ComponentTypeMask().withTransform().withSprite());
         for (size_t i = 0; i < entities.size(); ++i) {
+            SpriteComponent* s = ctx.world->getComponent<SpriteComponent>(entities[i]);
             TransformComponent* t = ctx.world->getComponent<TransformComponent>(entities[i]);
-            if (!t) continue;
+            if (!s || !s->castShadow || !t) continue;
             Vec2 pos(t->transform.position.x, t->transform.position.y);
             float radius = 40.0f * t->transform.scale.x;
             drawOccluderShadow(cmd, pos, radius, shadowDir, groundY);
@@ -59,7 +60,9 @@ void ShadowPass::drawOccluderShadow(CommandBuffer& cmd, const Vec2& pos,
                                     float radius, const Vec2& shadowDir,
                                     float groundY) {
     // Only draw if the shadow direction reaches the ground below the caster.
-    if (shadowDir.y <= 0.0f || pos.y >= groundY) return;
+    // Whether the caster is occluded by the horizon is determined by its
+    // SpriteComponent::castShadow flag, set per-frame by the scene.
+    if (shadowDir.y <= 0.0f) return;
 
     // Project the caster down along the shadow direction until it hits groundY.
     float t = (groundY - pos.y) / shadowDir.y;
