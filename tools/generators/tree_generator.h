@@ -27,11 +27,34 @@ public:
 
     Material build() override;
 
+    // Generate only the trunk material.
+    Material buildTrunk();
+
+    // Generate only the foliage/canopy material.
+    Material buildFoliage();
+
+    // Generate a matched trunk + foliage pair in one call.
+    void buildPair(Material& outTrunk, Material& outFoliage);
+
 private:
     int trunkWidth_ = 12;
     int trunkHeight_ = 30;
     int foliageRadius_ = 28;
     Color highlightColor_ = Color(0.25f, 0.72f, 0.25f, 1.0f);
+
+    // Shared randomization state for a matched trunk + foliage pair.
+    struct TreeParams {
+        int trunkW, trunkH;
+        int trunkX, trunkY;
+        int foliageRadius;
+        int foliageY;
+        int leafCount;
+        Color trunkColor;
+    };
+
+    TreeParams generateParams();
+    void rasterizeTrunk(std::vector<uint8_t>& rgba, const TreeParams& params);
+    void rasterizeFoliage(std::vector<uint8_t>& rgba, const TreeParams& params);
 };
 
 } // namespace domi

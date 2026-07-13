@@ -7,6 +7,8 @@
 #include "domi/math.h"
 #include "domi/input.h"
 #include "domi/canvas2d.h"
+#include "domi/render_layer.h"
+#include "domi/render_list.h"
 #include "tree_generator.h"
 #include "cloud_generator.h"
 #include "rock_generator.h"
@@ -67,66 +69,82 @@ public:
     void render(Canvas2D* canvas) override {
         if (!canvas) return;
 
-        // Sky is left as the clear color from GeometryPass.
-        // Horizon strip sits directly above the grass, bottom edge at y=240.
-        drawHorizon(canvas, 0, 120);
+        RenderList list;
+
+        // Horizon strip bottom edge is at y=240.
+        list.add(RenderLayer::Background, 240.0f, [&, canvas]() {
+            drawHorizon(canvas, 0, 120);
+        });
 
         // Grass covers the lower 2/3 of the screen (y=240..720).
-        canvas->setFillColor(Color(0.28f, 0.72f, 0.28f));
-        canvas->fillRect(0, 240, 1280, 480);
+        list.add(RenderLayer::Ground, 240.0f, [&, canvas]() {
+            canvas->setFillColor(Color(0.28f, 0.72f, 0.28f));
+            canvas->fillRect(0, 240, 1280, 480);
+        });
 
-        // Trees (placed on grass, y >= 240)
-        drawTree(canvas, 180, 320, 0);
-        drawTree(canvas, 1100, 300, 1);
-        drawTree(canvas, 980, 480, 2);
-        drawTree(canvas, 220, 560, 3);
-        drawTree(canvas, 1150, 620, 4);
-
-        // House and rocks (placed on grass)
-        drawHouse(canvas, 560, 360);
-        drawRock(canvas, 420, 380, 0);
-        drawRock(canvas, 460, 400, 1);
-        drawRock(canvas, 720, 540, 2);
-        drawRock(canvas, 760, 560, 3);
-
-        // Diagonal asphalt road across the grass
-        canvas->setFillColor(Color(0.35f, 0.35f, 0.35f));
-        canvas->beginPath();
-        canvas->moveTo(-121, 300);
-        canvas->lineTo(-79, 360);
-        canvas->lineTo(1401, 560);
-        canvas->lineTo(1359, 500);
-        canvas->closePath();
-        canvas->fill();
-
-        // Dashed yellow center line
-        canvas->setStrokeColor(Color(0.9f, 0.85f, 0.3f));
-        canvas->setLineWidth(4.0f);
-        for (int i = 0; i < 12; ++i) {
-            float t0 = i / 12.0f;
-            float t1 = (i + 0.5f) / 12.0f;
-            float x0 = -100 + t0 * 1480;
-            float y0 = 330 + t0 * 200;
-            float x1 = -100 + t1 * 1480;
-            float y1 = 330 + t1 * 200;
+        // Diagonal asphalt road across the grass. Sort by its lowest y.
+        list.add(RenderLayer::Road, 560.0f, [&, canvas]() {
+            canvas->setFillColor(Color(0.35f, 0.35f, 0.35f));
             canvas->beginPath();
-            canvas->moveTo(x0, y0);
-            canvas->lineTo(x1, y1);
-            canvas->stroke();
-        }
+            canvas->moveTo(-121, 300);
+            canvas->lineTo(-79, 360);
+            canvas->lineTo(1401, 560);
+            canvas->lineTo(1359, 500);
+            canvas->closePath();
+            canvas->fill();
+        });
 
-        // Clouds
-        drawCloud(canvas, 200 + cloudOffset_, 120, 0);
-        drawCloud(canvas, 600 + cloudOffset_ * 0.7f, 80, 1);
-        drawCloud(canvas, 950 + cloudOffset_ * 1.2f, 150, 2);
+        // Dashed yellow center line.
+        list.add(RenderLayer::RoadMarking, 560.0f, [&, canvas]() {
+            canvas->setStrokeColor(Color(0.9f, 0.85f, 0.3f));
+            canvas->setLineWidth(4.0f);
+            for (int i = 0; i < 12; ++i) {
+                float t0 = i / 12.0f;
+                float t1 = (i + 0.5f) / 12.0f;
+                float x0 = -100 + t0 * 1480;
+                float y0 = 330 + t0 * 200;
+                float x1 = -100 + t1 * 1480;
+                float y1 = 330 + t1 * 200;
+                canvas->beginPath();
+                canvas->moveTo(x0, y0);
+                canvas->lineTo(x1, y1);
+                canvas->stroke();
+            }
+        });
 
-        // Car (follows the road center line)
+        // Trees: trunks go into Object layer (sorted with car), foliage goes
+        // into Canopy layer so it stays above objects/vehicles.
+        addTree(list, canvas, 180, 320, 0);
+        addTree(list, canvas, 1100, 300, 1);
+        addTree(list, canvas, 980, 480, 2);
+        addTree(list, canvas, 220, 560, 3);
+        addTree(list, canvas, 1150, 620, 4);
+
+        // House and rocks (placed on grass). Sort by bottom edge.
+        list.add(RenderLayer::Object, 405.0f, [&, canvas]() { drawHouse(canvas, 560, 360); });
+        list.add(RenderLayer::Object, 400.0f, [&, canvas]() { drawRock(canvas, 420, 380, 0); });
+        list.add(RenderLayer::Object, 420.0f, [&, canvas]() { drawRock(canvas, 460, 400, 1); });
+        list.add(RenderLayer::Object, 560.0f, [&, canvas]() { drawRock(canvas, 720, 540, 2); });
+        list.add(RenderLayer::Object, 580.0f, [&, canvas]() { drawRock(canvas, 760, 560, 3); });
+
+        // Clouds. Sort by bottom edge (center y + half height).
+        list.add(RenderLayer::Cloud, 160.0f, [&, canvas]() { drawCloud(canvas, 200 + cloudOffset_, 120, 0); });
+        list.add(RenderLayer::Cloud, 120.0f, [&, canvas]() { drawCloud(canvas, 600 + cloudOffset_ * 0.7f, 80, 1); });
+        list.add(RenderLayer::Cloud, 190.0f, [&, canvas]() { drawCloud(canvas, 950 + cloudOffset_ * 1.2f, 150, 2); });
+
+        // Car (follows the road center line). Put it in the Object layer so it
+        // interleaves with trees/houses based on bottom-edge y-coordinate.
         float cx = -100 + carT_ * 1480;
         float cy = 330 + carT_ * 200;
-        drawCar(canvas, cx, cy);
+        const float carHeight = 20.0f;
+        list.add(RenderLayer::Object, cy + carHeight * 0.5f, [&, canvas]() { drawCar(canvas, cx, cy); });
 
         // A rotating 3D-style cube drawn with Canvas2D (software projection).
-        drawCube3D(canvas, 1050.0f, 520.0f, 60.0f, cubeAngleX_, cubeAngleY_);
+        list.add(RenderLayer::Effect, 550.0f, [&, canvas]() {
+            drawCube3D(canvas, 1050.0f, 520.0f, 60.0f, cubeAngleX_, cubeAngleY_);
+        });
+
+        list.flush();
     }
 
 private:
@@ -139,7 +157,8 @@ private:
     Entity sunEntity_;
     std::vector<Entity> cloudEntities_;
 
-    std::vector<Material> treeMaterials_;
+    std::vector<Material> treeTrunks_;
+    std::vector<Material> treeFoliages_;
     std::vector<Material> cloudMaterials_;
     std::vector<Material> rockMaterials_;
     Material houseMaterial_;
@@ -148,9 +167,30 @@ private:
     void createShadowCasters(World* world);
     void updateCloudShadowCasters();
 
-    void drawTree(Canvas2D* canvas, float x, float y, size_t index) {
-        if (!canvas || index >= treeMaterials_.size()) return;
-        const Material& m = treeMaterials_[index];
+    void addTree(RenderList& list, Canvas2D* canvas, float x, float y, size_t index) {
+        // Sort by the tree's bottom edge (material center + half height).
+        // Foliage uses the same sort key plus a tiny offset so it draws after
+        // the trunk within the same tree.
+        const float treeHeight = 80.0f;
+        float bottomZ = y + treeHeight * 0.5f;
+        list.add(RenderLayer::Object, bottomZ, [&, canvas, x, y, index]() {
+            drawTreeTrunk(canvas, x, y, index);
+        });
+        list.add(RenderLayer::Object, bottomZ + 0.1f, [&, canvas, x, y, index]() {
+            drawTreeFoliage(canvas, x, y, index);
+        });
+    }
+
+    void drawTreeTrunk(Canvas2D* canvas, float x, float y, size_t index) {
+        if (!canvas || index >= treeTrunks_.size()) return;
+        const Material& m = treeTrunks_[index];
+        if (m.width == 0) return;
+        canvas->drawMaterial(x - m.width * 0.5f, y - m.height * 0.5f, m);
+    }
+
+    void drawTreeFoliage(Canvas2D* canvas, float x, float y, size_t index) {
+        if (!canvas || index >= treeFoliages_.size()) return;
+        const Material& m = treeFoliages_[index];
         if (m.width == 0) return;
         canvas->drawMaterial(x - m.width * 0.5f, y - m.height * 0.5f, m);
     }
@@ -302,9 +342,11 @@ void Game2DScene::load(World* world, ScriptSystem* script) {
     // or PixelFormat::AlphaMask to experiment with different outputs.
     // Generate several randomized variants for each material type so that the
     // scene looks varied instead of repeating the same sprite.
-    treeMaterials_.clear();
+    treeTrunks_.clear();
+    treeFoliages_.clear();
     for (int i = 0; i < 5; ++i) {
-        treeMaterials_.push_back(TreeGenerator()
+        Material trunk, foliage;
+        TreeGenerator()
             .setSize(80, 80)
             .setFormat(PixelFormat::ARGB8888)
             .setSeed(1000u + i * 137u)
@@ -313,7 +355,9 @@ void Game2DScene::load(World* world, ScriptSystem* script) {
             .setDetailColor(Color(0.45f, 0.28f, 0.16f, 1.0f))
             .setTrunkSize(14, 32)
             .setFoliageRadius(30)
-            .build());
+            .buildPair(trunk, foliage);
+        treeTrunks_.push_back(trunk);
+        treeFoliages_.push_back(foliage);
     }
 
     rockMaterials_.clear();
