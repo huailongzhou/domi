@@ -90,6 +90,9 @@ Canvas2D::Canvas2D(SDL_Renderer* renderer)
       currentTarget_(NULL) {
     if (renderer_) {
         SDL_GetRenderOutputSize(renderer_, &width_, &height_);
+        // Use alpha blending for all renderer draw operations so that
+        // translucent fills and overlays work correctly.
+        SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
         // Use the platform-independent RGBA32 format so the locked pixel
         // memory is always laid out as R, G, B, A regardless of endianness.
         target3D_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32,
