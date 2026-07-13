@@ -11,6 +11,8 @@ struct SDL_Texture;
 
 namespace domi {
 
+class RenderTexture;
+
 enum class RenderMode {
     PAINTER,
     ZBUFFER
@@ -41,6 +43,8 @@ public:
     bool isBatching() const { return batching_; }
     void flush();
 
+    SDL_Renderer* getRenderer() const { return renderer_; }
+
     // Simple shapes
     void fillRect(float x, float y, float w, float h);
     void strokeRect(float x, float y, float w, float h);
@@ -58,6 +62,16 @@ public:
 
     // Draw a generated material at (x, y). Handles all PixelFormat variants.
     void drawMaterial(float x, float y, const Material& material);
+
+    // Draw a previously rendered target texture at (x, y) at its native size.
+    void drawTexture(float x, float y, RenderTexture* texture);
+
+    // Set the SDL render target. Passing NULL resets to the default target.
+    void setRenderTarget(RenderTexture* target);
+
+    // Set/reset a clip rectangle in screen/target space.
+    void setClipRect(float x, float y, float w, float h);
+    void resetClipRect();
 
     // 3D software rasterizer with z-buffer.
     // Call begin3D() before, end3D() after drawing 3D triangles.
@@ -88,6 +102,7 @@ private:
 
     RenderQueue queue_;
     bool batching_;
+    RenderTexture* currentTarget_;
 };
 
 } // namespace domi

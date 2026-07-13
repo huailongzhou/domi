@@ -1,4 +1,5 @@
 #include "domi/canvas2d.h"
+#include "domi/render_texture.h"
 #include <SDL3/SDL.h>
 #include <cmath>
 
@@ -85,7 +86,8 @@ Canvas2D::Canvas2D(SDL_Renderer* renderer)
       lineWidth_(1.0f),
       pathClosed_(false),
       queue_(),
-      batching_(true) {
+      batching_(true),
+      currentTarget_(NULL) {
     if (renderer_) {
         SDL_GetRenderOutputSize(renderer_, &width_, &height_);
         target3D_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA8888,
@@ -378,6 +380,42 @@ void Canvas2D::drawMaterial(float x, float y, const Material& material) {
     SDL_FRect dst = { x, y, (float)material.width, (float)material.height };
     SDL_RenderTexture(renderer_, tex, NULL, &dst);
     SDL_DestroyTexture(tex);
+}
+
+void Canvas2D::setRenderTarget(RenderTexture* target) {
+    if (!renderer_) return;
+    if (target == currentTarget_) return;
+
+    // Submit queued commands for the previous target before switching.
+    flush();
+
+    SDL_Texture* native = target ? target->getNative() : NULL;
+    SDL_SetRenderTarget(renderer_, native);
+    currentTarget_ = target;
+}
+
+void Canvas2D::setClipRect(float x, float y, float w, float h) {
+    if (!renderer_) return;
+    // Flush so queued commands are not affected by the new clip rect.
+    flush();
+    SDL_Rect rect = { (int)x, (int)y, (int)w, (int)h };
+    SDL_SetRenderClipRect(renderer_, &rect);
+}
+
+void Canvas2D::resetClipRect() {
+    if (!renderer_) return;
+    flush();
+    SDL_SetRenderClipRect(renderer_, NULL);
+}
+
+void Canvas2D::drawTexture(float x, float y, RenderTexture* texture) {
+    if (!renderer_ || !texture || !texture->valid()) return;
+
+    // Texture blits are immediate and must respect command order, so flush first.
+    flush();
+
+    SDL_FRect dst = { x, y, (float)texture->width(), (float)texture->height() };
+    SDL_RenderTexture(renderer_, texture->getNative(), NULL, &dst);
 }
 
 void Canvas2D::begin3D() {

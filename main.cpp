@@ -11,6 +11,7 @@
 #include "cloud_generator.h"
 #include "rock_generator.h"
 #include "house_generator.h"
+#include "horizon_generator.h"
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -39,7 +40,7 @@ class Game2DScene : public Scene {
 public:
     Game2DScene()
         : carT_(0.0f), carSpeed_(0.25f), cloudOffset_(0.0f),
-          cubeAngleX_(0.0f), cubeAngleY_(0.0f) {}
+          cubeAngleX_(0.0f), cubeAngleY_(0.0f), sunEntity_(0) {}
 
     const char* name() const override { return "Game2DScene"; }
 
@@ -56,6 +57,8 @@ public:
         cubeAngleX_ += 1.0f * dt;
         cubeAngleY_ += 0.7f * dt;
 
+        updateCloudShadowCasters();
+
         if (App::instance().getInput()->isKeyPressed(SDL_SCANCODE_R)) {
             App::instance().getSceneManager()->setNext(new SecondScene());
         }
@@ -64,31 +67,35 @@ public:
     void render(Canvas2D* canvas) override {
         if (!canvas) return;
 
-        // Grass background
+        // Sky is left as the clear color from GeometryPass.
+        // Horizon strip sits directly above the grass, bottom edge at y=240.
+        drawHorizon(canvas, 0, 120);
+
+        // Grass covers the lower 2/3 of the screen (y=240..720).
         canvas->setFillColor(Color(0.28f, 0.72f, 0.28f));
-        canvas->fillRect(0, 0, 1280, 720);
+        canvas->fillRect(0, 240, 1280, 480);
 
-        // Trees
-        drawTree(canvas, 180, 200, 0);
-        drawTree(canvas, 1100, 160, 1);
-        drawTree(canvas, 980, 450, 2);
-        drawTree(canvas, 220, 520, 3);
-        drawTree(canvas, 1150, 600, 4);
+        // Trees (placed on grass, y >= 240)
+        drawTree(canvas, 180, 320, 0);
+        drawTree(canvas, 1100, 300, 1);
+        drawTree(canvas, 980, 480, 2);
+        drawTree(canvas, 220, 560, 3);
+        drawTree(canvas, 1150, 620, 4);
 
-        // House and rocks
-        drawHouse(canvas, 560, 230);
-        drawRock(canvas, 420, 260, 0);
-        drawRock(canvas, 460, 270, 1);
-        drawRock(canvas, 720, 580, 2);
-        drawRock(canvas, 760, 590, 3);
+        // House and rocks (placed on grass)
+        drawHouse(canvas, 560, 360);
+        drawRock(canvas, 420, 380, 0);
+        drawRock(canvas, 460, 400, 1);
+        drawRock(canvas, 720, 540, 2);
+        drawRock(canvas, 760, 560, 3);
 
-        // Diagonal asphalt road crossing the screen
+        // Diagonal asphalt road across the grass
         canvas->setFillColor(Color(0.35f, 0.35f, 0.35f));
         canvas->beginPath();
-        canvas->moveTo(-121, 786);
-        canvas->lineTo(-79, 854);
-        canvas->lineTo(1401, -66);
-        canvas->lineTo(1359, -134);
+        canvas->moveTo(-121, 300);
+        canvas->lineTo(-79, 360);
+        canvas->lineTo(1401, 560);
+        canvas->lineTo(1359, 500);
         canvas->closePath();
         canvas->fill();
 
@@ -99,9 +106,9 @@ public:
             float t0 = i / 12.0f;
             float t1 = (i + 0.5f) / 12.0f;
             float x0 = -100 + t0 * 1480;
-            float y0 = 820 - t0 * 920;
+            float y0 = 330 + t0 * 200;
             float x1 = -100 + t1 * 1480;
-            float y1 = 820 - t1 * 920;
+            float y1 = 330 + t1 * 200;
             canvas->beginPath();
             canvas->moveTo(x0, y0);
             canvas->lineTo(x1, y1);
@@ -113,13 +120,13 @@ public:
         drawCloud(canvas, 600 + cloudOffset_ * 0.7f, 80, 1);
         drawCloud(canvas, 950 + cloudOffset_ * 1.2f, 150, 2);
 
-        // Car
+        // Car (follows the road center line)
         float cx = -100 + carT_ * 1480;
-        float cy = 820 - carT_ * 920;
+        float cy = 330 + carT_ * 200;
         drawCar(canvas, cx, cy);
 
         // A rotating 3D-style cube drawn with Canvas2D (software projection).
-        drawCube3D(canvas, 1050.0f, 200.0f, 60.0f, cubeAngleX_, cubeAngleY_);
+        drawCube3D(canvas, 1050.0f, 520.0f, 60.0f, cubeAngleX_, cubeAngleY_);
     }
 
 private:
@@ -129,10 +136,17 @@ private:
     float cubeAngleX_;
     float cubeAngleY_;
 
+    Entity sunEntity_;
+    std::vector<Entity> cloudEntities_;
+
     std::vector<Material> treeMaterials_;
     std::vector<Material> cloudMaterials_;
     std::vector<Material> rockMaterials_;
     Material houseMaterial_;
+    Material horizonMaterial_;
+
+    void createShadowCasters(World* world);
+    void updateCloudShadowCasters();
 
     void drawTree(Canvas2D* canvas, float x, float y, size_t index) {
         if (!canvas || index >= treeMaterials_.size()) return;
@@ -160,6 +174,11 @@ private:
         canvas->drawMaterial(x - houseMaterial_.width * 0.5f,
                              y - houseMaterial_.height * 0.5f,
                              houseMaterial_);
+    }
+
+    void drawHorizon(Canvas2D* canvas, float x, float y) {
+        if (!canvas || horizonMaterial_.width == 0) return;
+        canvas->drawMaterial(x, y, horizonMaterial_);
     }
 
     void drawCar(Canvas2D* canvas, float x, float y) {
@@ -276,7 +295,6 @@ private:
 };
 
 void Game2DScene::load(World* world, ScriptSystem* script) {
-    (void)world;
     (void)script;
 
     // Generate tree and cloud materials using the fluent generator API.
@@ -331,11 +349,72 @@ void Game2DScene::load(World* world, ScriptSystem* script) {
             .setPuffRadius(34)
             .build());
     }
+
+    horizonMaterial_ = HorizonGenerator()
+        .setSize(1280, 120)
+        .setFormat(PixelFormat::ARGB8888)
+        .setSeed(5000u)
+        .setBaseColor(Color(0.28f, 0.72f, 0.28f, 1.0f))
+        .setSkyColor(Color(0.12f, 0.12f, 0.16f, 1.0f))
+        .setHillColor(Color(0.15f, 0.40f, 0.15f, 1.0f))
+        .setHillCount(5)
+        .setHillHeight(25, 70)
+        .build();
+
+    createShadowCasters(world);
 }
 
 void Game2DScene::unload(World* world, ScriptSystem* script) {
-    (void)world;
     (void)script;
+    if (world) world->clear();
+    sunEntity_ = 0;
+    cloudEntities_.clear();
+}
+
+void Game2DScene::createShadowCasters(World* world) {
+    if (!world) return;
+
+    // Sun: directional light coming from top-right.
+    sunEntity_ = world->createEntity();
+    TransformComponent* sunT = world->addComponent<TransformComponent>(sunEntity_);
+    sunT->transform.position = Vec3(1.0f, -1.0f, 0.0f);
+    LightComponent* sunL = world->addComponent<LightComponent>(sunEntity_);
+    sunL->type = LightComponent::Directional;
+    sunL->color = Color(1.0f, 0.95f, 0.85f);
+    sunL->intensity = 1.0f;
+
+    // Clouds: alpha-zero sprites that only cast shadows.
+    cloudEntities_.clear();
+    for (int i = 0; i < 3; ++i) {
+        Entity cloud = world->createEntity();
+        TransformComponent* t = world->addComponent<TransformComponent>(cloud);
+        t->transform.scale = Vec3(1.2f, 0.8f, 1.0f);
+        SpriteComponent* s = world->addComponent<SpriteComponent>(cloud);
+        s->color = Color(0.0f, 0.0f, 0.0f, 0.0f); // invisible, shadow caster only
+        s->texturePath = "cloud_shadow_caster";   // required by ECS query mask
+        cloudEntities_.push_back(cloud);
+    }
+    updateCloudShadowCasters();
+}
+
+void Game2DScene::updateCloudShadowCasters() {
+    World* world = App::instance().getWorld();
+    if (!world || cloudEntities_.size() < 3) return;
+
+    struct CloudPos { float x, y; };
+    CloudPos positions[3] = {
+        { 200.0f + cloudOffset_, 120.0f },
+        { 600.0f + cloudOffset_ * 0.7f, 80.0f },
+        { 950.0f + cloudOffset_ * 1.2f, 150.0f }
+    };
+
+    for (int i = 0; i < 3; ++i) {
+        TransformComponent* t = world->getComponent<TransformComponent>(cloudEntities_[i]);
+        if (t) {
+            t->transform.position.x = positions[i].x;
+            t->transform.position.y = positions[i].y;
+        }
+    }
 }
 
 class Game3DScene : public Scene {

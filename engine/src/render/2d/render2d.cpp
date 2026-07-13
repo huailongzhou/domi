@@ -5,6 +5,12 @@
 #include "domi/canvas2d.h"
 #include "domi/scene_manager.h"
 #include "domi/scene.h"
+#include "domi/renderer.h"
+#include "domi/pass/geometry_pass.h"
+#include "domi/pass/shadow_pass.h"
+#include "domi/pass/lighting_pass.h"
+#include "domi/pass/composite_pass.h"
+#include "domi/pass/ui_pass.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
 #include <cstring>
@@ -160,7 +166,7 @@ static void multiply_matrix(const float* lhs, const float* rhs, float* r) {
 } // anonymous namespace
 
 RenderSystem::RenderSystem(Window* window)
-    : window_(window), useGPU_(false), canvas_(NULL),
+    : window_(window), useGPU_(false), canvas_(NULL), renderer_(NULL),
       gpu3DInited_(false), cubeVertexBuffer_(NULL), dynamicVertexBuffer_(NULL),
       cubePipeline_(NULL), depthTexture_(NULL), drawableW_(0), drawableH_(0),
       angleX_(0), angleY_(0), angleZ_(0), dynamicVertexCapacity_(0) {}
@@ -172,15 +178,30 @@ RenderSystem::~RenderSystem() {
 bool RenderSystem::init() {
     if (!window_) return false;
     useGPU_ = (window_->getGPUDevice() != NULL);
-    if (window_->getSDLRenderer()) {
-        canvas_ = new Canvas2D(window_->getSDLRenderer());
+    SDL_Renderer* sdlRenderer = window_->getSDLRenderer();
+    if (sdlRenderer) {
+        renderer_ = new Renderer();
+        if (!renderer_->init(sdlRenderer, window_->getWidth(), window_->getHeight())) {
+            delete renderer_;
+            renderer_ = NULL;
+            return false;
+        }
+        canvas_ = renderer_->getCanvas2D();
+
+        // Build the default 2D deferred/compositing pipeline.
+        renderer_->addPass(new GeometryPass(NULL));
+        renderer_->addPass(new ShadowPass());
+        renderer_->addPass(new LightingPass());
+        renderer_->addPass(new CompositePass());
+        renderer_->addPass(new UIPass());
     }
     return true;
 }
 
 void RenderSystem::shutdown() {
     shutdownGPU3D();
-    delete canvas_;
+    delete renderer_;
+    renderer_ = NULL;
     canvas_ = NULL;
 }
 
@@ -201,20 +222,19 @@ void RenderSystem::render(World* world, SceneManager* sceneManager) {
         }
         render3D(world);
     } else {
-        // 2D path: release GPU if it was claimed, then use SDL_Renderer.
+        // 2D path: release GPU if it was claimed, then use RenderPass pipeline.
         if (window_->isGPUClaimed()) {
             window_->releaseGPU();
         }
-        SDL_Renderer* renderer = window_->getSDLRenderer();
-        if (renderer) {
-            SDL_SetRenderDrawColor(renderer, 30, 30, 40, 255);
-            SDL_RenderClear(renderer);
-            render2D(world);
-            if (sceneManager && canvas_) {
-                sceneManager->render(canvas_);
-                canvas_->flush();
+        if (renderer_) {
+            // Make sure the GeometryPass has the current SceneManager.
+            for (size_t i = 0; i < renderer_->getPassCount(); ++i) {
+                GeometryPass* gp = dynamic_cast<GeometryPass*>(renderer_->getPass(i));
+                if (gp && gp->getSceneManager() != sceneManager) {
+                    gp->setSceneManager(sceneManager);
+                }
             }
-            SDL_RenderPresent(renderer);
+            renderer_->render(world, sceneManager);
         }
     }
 }

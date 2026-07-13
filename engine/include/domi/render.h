@@ -10,6 +10,7 @@ namespace domi {
 class Window;
 class SceneManager;
 class Canvas2D;
+class Renderer;
 
 class RenderSystem {
 public:
@@ -38,6 +39,7 @@ private:
     Window* window_;
     bool useGPU_;
     Canvas2D* canvas_;
+    Renderer* renderer_;
 
     // 3D GPU state
     bool gpu3DInited_;

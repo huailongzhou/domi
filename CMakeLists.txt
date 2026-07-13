@@ -33,6 +33,14 @@ add_library(domi_engine STATIC
     engine/src/render/2d/render2d.cpp
     engine/src/render/canvas2d.cpp
     engine/src/render/render_queue.cpp
+    engine/src/render/renderer.cpp
+    engine/src/render/render_texture.cpp
+    engine/src/render/render_command_buffer.cpp
+    engine/src/render/pass/geometry_pass.cpp
+    engine/src/render/pass/shadow_pass.cpp
+    engine/src/render/pass/lighting_pass.cpp
+    engine/src/render/pass/composite_pass.cpp
+    engine/src/render/pass/ui_pass.cpp
     engine/src/scene/scene_manager.cpp
     engine/src/audio/audio.cpp
     tools/generators/material_generator.cpp
@@ -40,6 +48,7 @@ add_library(domi_engine STATIC
     tools/generators/cloud_generator.cpp
     tools/generators/rock_generator.cpp
     tools/generators/house_generator.cpp
+    tools/generators/horizon_generator.cpp
 )
 
 target_include_directories(domi_engine PUBLIC
