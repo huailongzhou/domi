@@ -2,6 +2,7 @@
 #define DOMI_CANVAS2D_H
 
 #include "domi/material.h"
+#include "domi/render_queue.h"
 #include "domi/math.h"
 #include <vector>
 
@@ -26,13 +27,19 @@ public:
     void setRenderMode(RenderMode mode) { renderMode_ = mode; }
     RenderMode getRenderMode() const { return renderMode_; }
 
-    void setFillColor(const Color& c) { fillColor_ = c; }
-    void setStrokeColor(const Color& c) { strokeColor_ = c; }
-    void setLineWidth(float w) { lineWidth_ = w; }
+    void setFillColor(const Color& c);
+    void setStrokeColor(const Color& c);
+    void setLineWidth(float w);
 
     const Color& getFillColor() const { return fillColor_; }
     const Color& getStrokeColor() const { return strokeColor_; }
     float getLineWidth() const { return lineWidth_; }
+
+    // Queue / immediate-mode switch. Batching is enabled by default so that
+    // wasm-driven scripts can submit many draw calls with one native flush.
+    void setBatching(bool enabled);
+    bool isBatching() const { return batching_; }
+    void flush();
 
     // Simple shapes
     void fillRect(float x, float y, float w, float h);
@@ -78,6 +85,9 @@ private:
     float lineWidth_;
     std::vector<Vec2> path_;
     bool pathClosed_;
+
+    RenderQueue queue_;
+    bool batching_;
 };
 
 } // namespace domi

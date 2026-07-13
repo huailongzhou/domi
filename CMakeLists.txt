@@ -32,6 +32,7 @@ add_library(domi_engine STATIC
     engine/src/script/script.cpp
     engine/src/render/2d/render2d.cpp
     engine/src/render/canvas2d.cpp
+    engine/src/render/render_queue.cpp
     engine/src/scene/scene_manager.cpp
     engine/src/audio/audio.cpp
     tools/generators/material_generator.cpp

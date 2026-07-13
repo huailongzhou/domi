@@ -15,6 +15,60 @@ SDL_FColor toSDLColor(const Color& c) {
     return fc;
 }
 
+void renderGeometryPath(SDL_Renderer* renderer, const std::vector<Vec2>& path,
+                        bool closed, const Color& color) {
+    size_t n = path.size();
+    if (n < 3) return;
+
+    std::vector<SDL_Vertex> vertices;
+    vertices.reserve(n);
+    std::vector<int> indices;
+    indices.reserve((n - 2) * 3);
+
+    SDL_FColor col = toSDLColor(color);
+    SDL_FPoint zero = { 0.0f, 0.0f };
+
+    for (size_t i = 0; i < n; ++i) {
+        SDL_Vertex v;
+        v.position.x = path[i].x;
+        v.position.y = path[i].y;
+        v.color = col;
+        v.tex_coord = zero;
+        vertices.push_back(v);
+    }
+
+    for (size_t i = 1; i + 1 < n; ++i) {
+        indices.push_back(0);
+        indices.push_back((int)i);
+        indices.push_back((int)(i + 1));
+    }
+
+    SDL_RenderGeometry(renderer, NULL, vertices.data(), (int)vertices.size(),
+                       indices.data(), (int)indices.size());
+}
+
+void strokeGeometryPath(SDL_Renderer* renderer, const std::vector<Vec2>& path,
+                        bool closed, const Color& color) {
+    size_t n = path.size();
+    if (n < 2) return;
+
+    SDL_SetRenderDrawColor(renderer,
+        (uint8_t)(color.r * 255),
+        (uint8_t)(color.g * 255),
+        (uint8_t)(color.b * 255),
+        (uint8_t)(color.a * 255));
+
+    for (size_t i = 0; i + 1 < path.size(); ++i) {
+        SDL_RenderLine(renderer, path[i].x, path[i].y,
+                       path[i + 1].x, path[i + 1].y);
+    }
+
+    if (closed && path.size() > 2) {
+        SDL_RenderLine(renderer, path.back().x, path.back().y,
+                       path[0].x, path[0].y);
+    }
+}
+
 } // anonymous namespace
 
 Canvas2D::Canvas2D(SDL_Renderer* renderer)
@@ -29,7 +83,9 @@ Canvas2D::Canvas2D(SDL_Renderer* renderer)
       fillColor_(1, 1, 1, 1),
       strokeColor_(0, 0, 0, 1),
       lineWidth_(1.0f),
-      pathClosed_(false) {
+      pathClosed_(false),
+      queue_(),
+      batching_(true) {
     if (renderer_) {
         SDL_GetRenderOutputSize(renderer_, &width_, &height_);
         target3D_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA8888,
@@ -47,8 +103,48 @@ Canvas2D::~Canvas2D() {
     }
 }
 
+void Canvas2D::setBatching(bool enabled) {
+    if (!enabled && batching_) {
+        flush();
+    }
+    batching_ = enabled;
+}
+
+void Canvas2D::flush() {
+    if (renderer_) {
+        queue_.flush(renderer_);
+    } else {
+        queue_.clear();
+    }
+}
+
+void Canvas2D::setFillColor(const Color& c) {
+    fillColor_ = c;
+    if (batching_) {
+        queue_.setFillColor(c);
+    }
+}
+
+void Canvas2D::setStrokeColor(const Color& c) {
+    strokeColor_ = c;
+    if (batching_) {
+        queue_.setStrokeColor(c);
+    }
+}
+
+void Canvas2D::setLineWidth(float w) {
+    lineWidth_ = w;
+    if (batching_) {
+        queue_.setLineWidth(w);
+    }
+}
+
 void Canvas2D::fillRect(float x, float y, float w, float h) {
     if (!renderer_) return;
+    if (batching_) {
+        queue_.fillRect(x, y, w, h);
+        return;
+    }
     SDL_SetRenderDrawColor(renderer_,
         (uint8_t)(fillColor_.r * 255),
         (uint8_t)(fillColor_.g * 255),
@@ -60,6 +156,10 @@ void Canvas2D::fillRect(float x, float y, float w, float h) {
 
 void Canvas2D::strokeRect(float x, float y, float w, float h) {
     if (!renderer_) return;
+    if (batching_) {
+        queue_.strokeRect(x, y, w, h);
+        return;
+    }
     SDL_SetRenderDrawColor(renderer_,
         (uint8_t)(strokeColor_.r * 255),
         (uint8_t)(strokeColor_.g * 255),
@@ -70,13 +170,20 @@ void Canvas2D::strokeRect(float x, float y, float w, float h) {
 }
 
 void Canvas2D::clearRect(float x, float y, float w, float h) {
-    // For SDL_Renderer, "clear" means overwrite with the current draw color.
-    // We use the fill color as the clear color.
-    fillRect(x, y, w, h);
+    // For SDL_Renderer, "clear" means overwrite with the current fill color.
+    if (batching_) {
+        queue_.clearRect(x, y, w, h);
+    } else {
+        fillRect(x, y, w, h);
+    }
 }
 
 void Canvas2D::drawLine(float x1, float y1, float x2, float y2) {
     if (!renderer_) return;
+    if (batching_) {
+        queue_.drawLine(x1, y1, x2, y2);
+        return;
+    }
     SDL_SetRenderDrawColor(renderer_,
         (uint8_t)(strokeColor_.r * 255),
         (uint8_t)(strokeColor_.g * 255),
@@ -87,6 +194,10 @@ void Canvas2D::drawLine(float x1, float y1, float x2, float y2) {
 
 void Canvas2D::fillCircle(float x, float y, float radius, int segments) {
     if (!renderer_ || segments < 3) return;
+    if (batching_) {
+        queue_.fillCircle(x, y, radius, segments);
+        return;
+    }
 
     std::vector<SDL_Vertex> vertices;
     vertices.reserve(segments + 2);
@@ -120,7 +231,8 @@ void Canvas2D::fillCircle(float x, float y, float radius, int segments) {
         indices.push_back(i + 2);
     }
 
-    SDL_RenderGeometry(renderer_, NULL, vertices.data(), (int)vertices.size(), indices.data(), (int)indices.size());
+    SDL_RenderGeometry(renderer_, NULL, vertices.data(), (int)vertices.size(),
+                       indices.data(), (int)indices.size());
 }
 
 void Canvas2D::beginPath() {
@@ -142,50 +254,20 @@ void Canvas2D::closePath() {
 
 void Canvas2D::fill() {
     if (!renderer_ || path_.size() < 3) return;
-
-    size_t n = path_.size();
-    std::vector<SDL_Vertex> vertices;
-    vertices.reserve(n);
-    std::vector<int> indices;
-    indices.reserve((n - 2) * 3);
-
-    SDL_FColor col = toSDLColor(fillColor_);
-    SDL_FPoint zero = { 0.0f, 0.0f };
-
-    for (size_t i = 0; i < n; ++i) {
-        SDL_Vertex v;
-        v.position.x = path_[i].x;
-        v.position.y = path_[i].y;
-        v.color = col;
-        v.tex_coord = zero;
-        vertices.push_back(v);
+    if (batching_) {
+        queue_.fillPath(path_, pathClosed_);
+        return;
     }
-
-    for (size_t i = 1; i + 1 < n; ++i) {
-        indices.push_back(0);
-        indices.push_back((int)i);
-        indices.push_back((int)(i + 1));
-    }
-
-    SDL_RenderGeometry(renderer_, NULL, vertices.data(), (int)vertices.size(), indices.data(), (int)indices.size());
+    renderGeometryPath(renderer_, path_, pathClosed_, fillColor_);
 }
 
 void Canvas2D::stroke() {
     if (!renderer_ || path_.size() < 2) return;
-
-    SDL_SetRenderDrawColor(renderer_,
-        (uint8_t)(strokeColor_.r * 255),
-        (uint8_t)(strokeColor_.g * 255),
-        (uint8_t)(strokeColor_.b * 255),
-        (uint8_t)(strokeColor_.a * 255));
-
-    for (size_t i = 0; i + 1 < path_.size(); ++i) {
-        SDL_RenderLine(renderer_, path_[i].x, path_[i].y, path_[i + 1].x, path_[i + 1].y);
+    if (batching_) {
+        queue_.strokePath(path_, pathClosed_);
+        return;
     }
-
-    if (pathClosed_ && path_.size() > 2) {
-        SDL_RenderLine(renderer_, path_.back().x, path_.back().y, path_[0].x, path_[0].y);
-    }
+    strokeGeometryPath(renderer_, path_, pathClosed_, strokeColor_);
 }
 
 namespace {
@@ -234,6 +316,10 @@ std::vector<uint8_t> materialToRGBA(const domi::Material& mat) {
 
 void Canvas2D::drawMaterial(float x, float y, const Material& material) {
     if (!renderer_ || material.width <= 0 || material.height <= 0) return;
+
+    // Material draws are immediate and must happen in the correct order
+    // relative to queued 2D commands, so flush any pending batched work first.
+    flush();
 
     SDL_PixelFormat sdlFormat = SDL_PIXELFORMAT_RGBA8888;
     int pixelBytes = 4;
@@ -296,6 +382,7 @@ void Canvas2D::drawMaterial(float x, float y, const Material& material) {
 
 void Canvas2D::begin3D() {
     if (!renderer_ || !target3D_ || in3D_) return;
+    flush();
     if (SDL_LockTexture(target3D_, NULL, &lockedPixels_, &lockedPitch_)) {
         in3D_ = true;
         // Clear 3D layer to transparent.

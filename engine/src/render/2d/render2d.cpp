@@ -212,6 +212,7 @@ void RenderSystem::render(World* world, SceneManager* sceneManager) {
             render2D(world);
             if (sceneManager && canvas_) {
                 sceneManager->render(canvas_);
+                canvas_->flush();
             }
             SDL_RenderPresent(renderer);
         }
