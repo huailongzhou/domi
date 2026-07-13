@@ -228,10 +228,10 @@ void Canvas2D::fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
     float denom = dot00 * dot11 - dot01 * dot01;
     if (denom == 0.0f) return;
 
-    uint8_t r = (uint8_t)(color.r * 255.0f);
-    uint8_t g = (uint8_t)(color.g * 255.0f);
-    uint8_t b = (uint8_t)(color.b * 255.0f);
-    uint8_t a = (uint8_t)(color.a * 255.0f);
+    uint8_t cr = (uint8_t)(color.r * 255.0f);
+    uint8_t cg = (uint8_t)(color.g * 255.0f);
+    uint8_t cb = (uint8_t)(color.b * 255.0f);
+    uint8_t ca = (uint8_t)(color.a * 255.0f);
 
     for (int y = (int)minY; y <= (int)maxY; ++y) {
         uint8_t* row = (uint8_t*)lockedPixels_ + y * lockedPitch_;
@@ -249,10 +249,10 @@ void Canvas2D::fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
             if (z < depthBuffer_[idx]) {
                 depthBuffer_[idx] = z;
                 int px = x * 4;
-                row[px + 0] = r;
-                row[px + 1] = g;
-                row[px + 2] = b;
-                row[px + 3] = a;
+                row[px + 0] = cr;
+                row[px + 1] = cg;
+                row[px + 2] = cb;
+                row[px + 3] = ca;
             }
         }
     }

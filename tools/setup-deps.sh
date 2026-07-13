@@ -13,7 +13,13 @@ set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-JOBS=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+if [ "$(uname -s)" = "Darwin" ]; then
+    JOBS=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
+    WAMR_PLATFORM="darwin"
+else
+    JOBS=$(nproc 2>/dev/null || echo 4)
+    WAMR_PLATFORM="linux"
+fi
 SDL_VERSION="3.2.14"
 WAMR_VERSION="2.4.3"
 
@@ -68,9 +74,9 @@ fi
 
 mkdir -p wamr-build
 cd wamr-build
-cmake "../$WAMR_SRC/product-mini/platforms/darwin" \
+cmake "../$WAMR_SRC/product-mini/platforms/${WAMR_PLATFORM}" \
     -DCMAKE_INSTALL_PREFIX="$ROOT/wamr" \
-    -DWAMR_BUILD_PLATFORM=darwin \
+    -DWAMR_BUILD_PLATFORM="${WAMR_PLATFORM}" \
     -DWAMR_BUILD_INTERP=1 \
     -DWAMR_BUILD_FAST_INTERP=1 \
     -DWAMR_BUILD_AOT=1 \

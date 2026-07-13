@@ -69,11 +69,29 @@ if(DEFINED ENV{WASI_SDK_DIR})
     set(WASI_CLANG ${WASI_SDK_DIR}/bin/clang)
 endif()
 
+# Try to find a system clang with wasm32-wasi support
+if(NOT SYSTEM_CLANG)
+    find_program(CLANG_CANDIDATE clang)
+    if(CLANG_CANDIDATE)
+        execute_process(
+            COMMAND ${CLANG_CANDIDATE} --target=wasm32-wasi -dM -E -x c -
+            INPUT_FILE /dev/null
+            OUTPUT_QUIET ERROR_QUIET
+            RESULT_VARIABLE CLANG_WASM_OK
+        )
+        if(CLANG_WASM_OK EQUAL 0)
+            set(SYSTEM_CLANG ${CLANG_CANDIDATE})
+        endif()
+    endif()
+endif()
+
 if(WASM_COMPILER STREQUAL "auto")
     if(EMSCRIPTEN_EMCC)
         set(WASM_COMPILER "emscripten")
     elseif(BREW_LLVM_CLANG)
         set(WASM_COMPILER "brew-llvm")
+    elseif(SYSTEM_CLANG)
+        set(WASM_COMPILER "system-clang")
     elseif(WASI_CLANG)
         set(WASM_COMPILER "wasi-sdk")
     else()
@@ -150,6 +168,30 @@ elseif(WASM_COMPILER STREQUAL "wasi-sdk" AND WASI_CLANG)
         DEPENDS ${CMAKE_SOURCE_DIR}/scripts/src/player_2d.cpp
                 ${CMAKE_SOURCE_DIR}/script_api/domi_api.h
         COMMENT "Compiling player_2d.cpp to WASM (WASI SDK)"
+    )
+
+    add_custom_target(player_2d_wasm DEPENDS ${CMAKE_BINARY_DIR}/scripts/player_2d.wasm)
+    add_dependencies(scripts player_2d_wasm)
+
+elseif(WASM_COMPILER STREQUAL "system-clang" AND SYSTEM_CLANG)
+    add_custom_target(scripts ALL)
+
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/scripts/player_2d.wasm
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/scripts
+        COMMAND ${SYSTEM_CLANG}
+            --target=wasm32-wasi
+            -O2
+            -nostartfiles
+            -Wl,--no-entry
+            -Wl,--export-all
+            -Wl,--allow-undefined
+            -I${CMAKE_SOURCE_DIR}/script_api
+            -o ${CMAKE_BINARY_DIR}/scripts/player_2d.wasm
+            ${CMAKE_SOURCE_DIR}/scripts/src/player_2d.cpp
+        DEPENDS ${CMAKE_SOURCE_DIR}/scripts/src/player_2d.cpp
+                ${CMAKE_SOURCE_DIR}/script_api/domi_api.h
+        COMMENT "Compiling player_2d.cpp to WASM (system clang)"
     )
 
     add_custom_target(player_2d_wasm DEPENDS ${CMAKE_BINARY_DIR}/scripts/player_2d.wasm)
