@@ -9,6 +9,7 @@
 #include "domi/canvas2d.h"
 #include "domi/render_layer.h"
 #include "domi/render_list.h"
+#include "domi/scene_function.h"
 #include "tree_generator.h"
 #include "cloud_generator.h"
 #include "rock_generator.h"
@@ -48,7 +49,11 @@ public:
     Game2DScene()
         : carT_(0.0f), carSpeed_(0.25f), cloudOffset_(0.0f),
           cubeAngleX_(0.0f), cubeAngleY_(0.0f), sunEntity_(0),
-          useZBuffer_(true), dayTime_(6.0f), dayDuration_(120.0f) {}
+          useZBuffer_(true), dayTime_(6.0f), dayDuration_(120.0f),
+          cachedSunColor_(1.0f, 0.95f, 0.85f, 1.0f),
+          cachedSunIntensity_(1.0f),
+          cachedLightDir_(0.0f, -1.0f),
+          cachedOverlay_(1.0f, 1.0f, 1.0f, 0.0f) {}
 
     const char* name() const override { return "Game2DScene"; }
 
@@ -68,6 +73,11 @@ public:
         // Advance the day/night cycle: 24 hours in dayDuration_ seconds.
         dayTime_ += static_cast<float>(dt * (24.0 / dayDuration_));
         if (dayTime_ >= 24.0f) dayTime_ -= 24.0f;
+
+        // Evaluate the day/night cycle once per frame; every other system
+        // reads the cached result instead of recomputing it.
+        evaluateDayCycle(cachedSunColor_, cachedSunIntensity_,
+                         cachedLightDir_, cachedOverlay_);
         updateSun();
         updateCloudShadowCasters();
 
@@ -98,21 +108,22 @@ public:
             canvas->fillRect(0, 240, 1280, 480);
         });
 
-        // Tree shadows projected onto the ground from the current sun direction.
-        list.add(RenderLayer::Ground, 245.0f, [&, canvas]() {
-            Color sunColor, overlay;
-            float intensity;
-            Vec2 lightDir;
-            evaluateDayCycle(sunColor, intensity, lightDir, overlay);
-            Vec2 shadowDir = lightDir * -1.0f;
+        // Ground-object shadows are drawn after the road surface but before
+        // objects, so they are visible on both grass and asphalt. Cloud shadows
+        // stay in the ShadowPass shadow mask.
+        list.add(RenderLayer::Surface, 562.0f, [&, canvas]() {
+            Vec2 shadowDir = cachedLightDir_ * -1.0f;
             if (shadowDir.y > 0.0f) {
-                drawTreeShadow(canvas, 180, 320, shadowDir);
-                drawTreeShadow(canvas, 1100, 300, shadowDir);
-                drawTreeShadow(canvas, 980, 480, shadowDir);
-                drawTreeShadow(canvas, 220, 560, shadowDir);
-                drawTreeShadow(canvas, 1150, 620, shadowDir);
-                drawHouseShadow(canvas, 560, 360, shadowDir);
-                drawCubeShadow(canvas, 1050, 520, shadowDir);
+                // Tree shadow base is at y + 40 (80px tall, centered).
+                SceneFunction::drawShadow(canvas, 180,  320, 32.0f, 10.0f, 40.0f, shadowDir);
+                SceneFunction::drawShadow(canvas, 1100, 300, 32.0f, 10.0f, 40.0f, shadowDir);
+                SceneFunction::drawShadow(canvas, 980,  480, 32.0f, 10.0f, 40.0f, shadowDir);
+                SceneFunction::drawShadow(canvas, 220,  560, 32.0f, 10.0f, 40.0f, shadowDir);
+                SceneFunction::drawShadow(canvas, 1150, 620, 32.0f, 10.0f, 40.0f, shadowDir);
+                // House shadow base is at y + 45 (90px tall, centered).
+                SceneFunction::drawShadow(canvas, 560,  360, 48.0f, 16.0f, 45.0f, shadowDir);
+                // Cube shadow base is at y + 30 (60px size, centered).
+                SceneFunction::drawShadow(canvas, 1050, 520, 34.0f, 12.0f, 30.0f, shadowDir);
             }
         });
 
@@ -128,8 +139,9 @@ public:
             canvas->fill();
         });
 
-        // Dashed yellow center line.
-        list.add(RenderLayer::Surface, 560.0f, [&, canvas]() {
+        // Dashed yellow center line. Drawn just above the asphalt so it is not
+        // accidentally sorted underneath it when the two items share a layer.
+        list.add(RenderLayer::Surface, 561.0f, [&, canvas]() {
             canvas->setStrokeColor(Color(0.9f, 0.85f, 0.3f));
             canvas->setLineWidth(4.0f);
             for (int i = 0; i < 12; ++i) {
@@ -191,11 +203,7 @@ public:
 
         // Day/night color overlay.
         list.add(RenderLayer::Overlay, 0.0f, [&, canvas]() {
-            Color sunColor, overlay;
-            float intensity;
-            Vec2 lightDir;
-            evaluateDayCycle(sunColor, intensity, lightDir, overlay);
-            canvas->setFillColor(overlay);
+            canvas->setFillColor(cachedOverlay_);
             canvas->fillRect(0, 0, 1280, 720);
         });
 
@@ -211,6 +219,12 @@ private:
     bool useZBuffer_;
     float dayTime_;      // 0..24 hours
     float dayDuration_;  // seconds for a full 24-hour cycle
+
+    // Cached day-cycle state, computed once per frame in update().
+    Color cachedSunColor_;
+    float cachedSunIntensity_;
+    Vec2 cachedLightDir_;
+    Color cachedOverlay_;
 
     Entity sunEntity_;
     std::vector<Entity> cloudEntities_;
@@ -257,86 +271,6 @@ private:
         const Material& m = treeFoliages_[index];
         if (m.width == 0) return;
         canvas->drawMaterial(x - m.width * 0.5f, y - m.height * 0.5f, m);
-    }
-
-    void drawTreeShadow(Canvas2D* canvas, float x, float y, const Vec2& shadowDir) {
-        if (!canvas || shadowDir.y <= 0.0f) return;
-
-        // The tree is a 2D sprite centered at (x, y); its base sits roughly
-        // at y + half height. Cast the shadow on the ground around that point,
-        // pushing it horizontally as the sun lowers.
-        const float treeHalfH = 40.0f;
-        float horizontalOffset = shadowDir.x * (50.0f / shadowDir.y);
-        Vec2 shadowPos(x + horizontalOffset, y + treeHalfH);
-
-        float lengthScale = 1.0f + (1.0f - shadowDir.y) * 0.8f;
-        float rx = 32.0f * lengthScale;
-        float ry = 10.0f;
-
-        canvas->setFillColor(Color(0.0f, 0.0f, 0.0f, 0.45f));
-        canvas->beginPath();
-        int segments = 20;
-        for (int i = 0; i <= segments; ++i) {
-            float angle = (float)i / (float)segments * 2.0f * 3.14159265f;
-            float px = shadowPos.x + std::cos(angle) * rx;
-            float py = shadowPos.y + std::sin(angle) * ry;
-            if (i == 0) canvas->moveTo(px, py);
-            else canvas->lineTo(px, py);
-        }
-        canvas->closePath();
-        canvas->fill();
-    }
-
-    void drawHouseShadow(Canvas2D* canvas, float x, float y, const Vec2& shadowDir) {
-        if (!canvas || shadowDir.y <= 0.0f) return;
-
-        // House sprite is 90x90 and centered at (x, y); its base is near y + 45.
-        const float houseHalfH = 45.0f;
-        float horizontalOffset = shadowDir.x * (70.0f / shadowDir.y);
-        Vec2 shadowPos(x + horizontalOffset, y + houseHalfH);
-
-        float lengthScale = 1.0f + (1.0f - shadowDir.y) * 0.8f;
-        float rx = 48.0f * lengthScale;
-        float ry = 16.0f;
-
-        canvas->setFillColor(Color(0.0f, 0.0f, 0.0f, 0.45f));
-        canvas->beginPath();
-        int segments = 20;
-        for (int i = 0; i <= segments; ++i) {
-            float angle = (float)i / (float)segments * 2.0f * 3.14159265f;
-            float px = shadowPos.x + std::cos(angle) * rx;
-            float py = shadowPos.y + std::sin(angle) * ry;
-            if (i == 0) canvas->moveTo(px, py);
-            else canvas->lineTo(px, py);
-        }
-        canvas->closePath();
-        canvas->fill();
-    }
-
-    void drawCubeShadow(Canvas2D* canvas, float x, float y, const Vec2& shadowDir) {
-        if (!canvas || shadowDir.y <= 0.0f) return;
-
-        // The 3D cube is drawn centered at (x, y); treat its base as y + half size.
-        const float cubeHalfH = 30.0f;
-        float horizontalOffset = shadowDir.x * (45.0f / shadowDir.y);
-        Vec2 shadowPos(x + horizontalOffset, y + cubeHalfH);
-
-        float lengthScale = 1.0f + (1.0f - shadowDir.y) * 0.8f;
-        float rx = 34.0f * lengthScale;
-        float ry = 12.0f;
-
-        canvas->setFillColor(Color(0.0f, 0.0f, 0.0f, 0.45f));
-        canvas->beginPath();
-        int segments = 20;
-        for (int i = 0; i <= segments; ++i) {
-            float angle = (float)i / (float)segments * 2.0f * 3.14159265f;
-            float px = shadowPos.x + std::cos(angle) * rx;
-            float py = shadowPos.y + std::sin(angle) * ry;
-            if (i == 0) canvas->moveTo(px, py);
-            else canvas->lineTo(px, py);
-        }
-        canvas->closePath();
-        canvas->fill();
     }
 
     void drawCloud(Canvas2D* canvas, float x, float y, size_t index) {
@@ -491,10 +425,12 @@ void Game2DScene::unload(World* world, ScriptSystem* script) {
 void Game2DScene::createShadowCasters(World* world) {
     if (!world) return;
 
-    // Sun: directional light coming from top-right.
+    // Sun: directional light. Direction is stored in the transform's forward
+    // vector and updated each frame by updateSun(); position is irrelevant for
+    // a directional light, so keep it at the origin.
     sunEntity_ = world->createEntity();
     TransformComponent* sunT = world->addComponent<TransformComponent>(sunEntity_);
-    sunT->transform.position = Vec3(1.0f, -1.0f, 0.0f);
+    sunT->transform.position = Vec3(0.0f, 0.0f, 0.0f);
     LightComponent* sunL = world->addComponent<LightComponent>(sunEntity_);
     sunL->type = LightComponent::Directional;
     sunL->color = Color(1.0f, 0.95f, 0.85f);
@@ -533,11 +469,7 @@ void Game2DScene::updateCloudShadowCasters() {
     const int skylineW = static_cast<int>(horizonSkyline_.size());
 
     // No ground shadows when the sun is below the horizon.
-    Color sunColor, overlay;
-    float intensity;
-    Vec2 lightDir;
-    evaluateDayCycle(sunColor, intensity, lightDir, overlay);
-    bool sunAboveHorizon = (lightDir.y < 0.0f);
+    bool sunAboveHorizon = (cachedLightDir_.y < 0.0f);
 
     for (int i = 0; i < kCloudCount; ++i) {
         TransformComponent* t = world->getComponent<TransformComponent>(cloudEntities_[i]);
@@ -648,20 +580,16 @@ void Game2DScene::updateSun() {
     LightComponent* l = world->getComponent<LightComponent>(sunEntity_);
     if (!t || !l) return;
 
-    Color sunColor;
-    float intensity;
-    Vec2 lightDir;
-    Color overlay;
-    evaluateDayCycle(sunColor, intensity, lightDir, overlay);
-    (void)overlay;
+    l->color = cachedSunColor_;
+    l->intensity = cachedSunIntensity_;
 
-    l->color = sunColor;
-    l->intensity = intensity;
-    // Light direction is stored in the transform's forward vector.
-    t->transform.position = Vec3(lightDir.x, lightDir.y, 0.0f);
+    // Directional lights have no meaningful position; keep it at the origin.
+    t->transform.position = Vec3(0.0f, 0.0f, 0.0f);
 
-    // Orient the sun so Transform::forward() matches the light direction.
-    Vec3 lightTarget(lightDir.x, lightDir.y, 0.0f);
+    // Orient the transform so Transform::forward() matches the cached light
+    // direction. forward() for an identity quaternion is +Z, so we rotate +Z
+    // onto the (lightDir.x, lightDir.y, 0) vector.
+    Vec3 lightTarget(cachedLightDir_.x, cachedLightDir_.y, 0.0f);
     Vec3 defaultForward(0.0f, 0.0f, 1.0f);
     Vec3 axis = Vec3::cross(defaultForward, lightTarget).normalized();
     if (axis.length() > 0.001f) {
@@ -671,6 +599,7 @@ void Game2DScene::updateSun() {
         t->transform.rotation = Quat(axis.x * s, axis.y * s, axis.z * s,
                                      std::cos(halfAngle));
     } else {
+        // Light direction is already (or exactly opposite to) +Z; identity works.
         t->transform.rotation = Quat();
     }
 }

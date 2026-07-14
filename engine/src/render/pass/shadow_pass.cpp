@@ -58,6 +58,11 @@ void ShadowPass::record(CommandBuffer& cmd, RenderContext& ctx) {
             SpriteComponent* s = ctx.world->getComponent<SpriteComponent>(entities[i]);
             TransformComponent* t = ctx.world->getComponent<TransformComponent>(entities[i]);
             if (!s || !s->castShadow || !t) continue;
+            // Alpha-zero sprites are shadow casters only (clouds); skip sprites
+            // that have visible geometry (ground objects draw their own shadows
+            // in the scene's render order so they don't overlap the caster).
+            if (s->color.a > 0.0f) continue;
+
             Vec2 pos(t->transform.position.x, t->transform.position.y);
             float radius = 40.0f * t->transform.scale.x;
             drawOccluderShadow(cmd, pos, radius, shadowDir, groundY);
