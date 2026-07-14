@@ -43,6 +43,7 @@ add_library(domi_engine STATIC
     engine/src/render/pass/ui_pass.cpp
     engine/src/scene/scene_manager.cpp
     engine/src/scene/scene_function.cpp
+    engine/src/backend/sdl_backend.cpp
     engine/src/audio/audio.cpp
     tools/generators/material_generator.cpp
     tools/generators/tree_generator.cpp

@@ -4,13 +4,12 @@
 #include "domi/material.h"
 #include "domi/render_queue.h"
 #include "domi/math.h"
+#include "domi/types.h"
 #include <vector>
-
-struct SDL_Renderer;
-struct SDL_Texture;
 
 namespace domi {
 
+class IRenderBackend;
 class RenderTexture;
 
 enum class RenderMode {
@@ -18,12 +17,14 @@ enum class RenderMode {
     ZBUFFER
 };
 
-// A minimal Canvas2D-style drawing API built on top of SDL_Renderer.
-// Supports basic shapes, paths and convex polygon filling.
-// Also includes a software z-buffer rasterizer for 3D triangles.
+// A minimal Canvas2D-style drawing API.
+//
+// This class is a thin wrapper around IRenderBackend. It adds a command queue
+// for batched 2D operations and a software z-buffer rasterizer for 3D triangles.
+// All platform-specific rendering lives in the backend implementation.
 class Canvas2D {
 public:
-    explicit Canvas2D(SDL_Renderer* renderer);
+    explicit Canvas2D(IRenderBackend* backend);
     ~Canvas2D();
 
     void setRenderMode(RenderMode mode) { renderMode_ = mode; }
@@ -43,7 +44,7 @@ public:
     bool isBatching() const { return batching_; }
     void flush();
 
-    SDL_Renderer* getRenderer() const { return renderer_; }
+    IRenderBackend* getBackend() const { return backend_; }
 
     // Simple shapes
     void fillRect(float x, float y, float w, float h);
@@ -65,9 +66,13 @@ public:
 
     // Draw a previously rendered target texture at (x, y) at its native size.
     void drawTexture(float x, float y, RenderTexture* texture);
+    void drawTexture(float x, float y, RenderTexture* texture, BlendMode mode);
 
-    // Set the SDL render target. Passing NULL resets to the default target.
+    // Set the current render target. Passing NULL selects the default target.
     void setRenderTarget(RenderTexture* target);
+
+    // Clear the current render target to the given color.
+    void clear(const Color& c);
 
     // Set/reset a clip rectangle in screen/target space.
     void setClipRect(float x, float y, float w, float h);
@@ -86,9 +91,6 @@ public:
                    const Color& color = Color(1, 1, 1, 1));
 
     // Draw an arbitrary indexed triangle mesh through the software rasterizer.
-    // vertices:   array of local-space positions
-    // indices:    triangle list (3 indices per triangle)
-    // triangleCount: number of triangles
     void drawMesh3D(float cx, float cy, float scale,
                     float rotX, float rotY, float rotZ,
                     const Vec3* vertices, int vertexCount,
@@ -96,27 +98,26 @@ public:
                     const Color& color);
 
 private:
-    SDL_Renderer* renderer_;
-    SDL_Texture* target3D_;
+    IRenderBackend* backend_;
+    RenderTexture* currentTarget_;
     int width_;
     int height_;
-    std::vector<float> depthBuffer_;
+
+    bool in3D_;
     void* lockedPixels_;
     int lockedPitch_;
-    bool in3D_;
-    RenderMode renderMode_;
+    std::vector<float> depthBuffer_;
 
+    RenderMode renderMode_;
+    bool batching_;
     Color fillColor_;
     Color strokeColor_;
     float lineWidth_;
     std::vector<Vec2> path_;
     bool pathClosed_;
-
     RenderQueue queue_;
-    bool batching_;
-    RenderTexture* currentTarget_;
 };
 
 } // namespace domi
 
-#endif
+#endif // DOMI_CANVAS2D_H

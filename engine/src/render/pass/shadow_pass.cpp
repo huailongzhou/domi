@@ -1,7 +1,6 @@
 #include "domi/pass/shadow_pass.h"
 #include "domi/render_command_buffer.h"
 #include "domi/render_texture.h"
-#include "domi/canvas2d.h"
 #include "domi/ecs.h"
 #include "domi/component.h"
 #include <vector>
@@ -14,17 +13,9 @@ void ShadowPass::record(CommandBuffer& cmd, RenderContext& ctx) {
 
     cmd.setTarget(ctx.shadowMask);
 
-    // Clear the shadow mask to transparent white. We use SDL_RenderClear
-    // instead of fillRect so the target is fully cleared even when the
-    // renderer's blend mode is alpha-blended.
-    Canvas2D* canvas = cmd.getCanvas();
-    if (canvas) {
-        SDL_Renderer* renderer = canvas->getRenderer();
-        if (renderer) {
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 0);
-            SDL_RenderClear(renderer);
-        }
-    }
+    // Clear the shadow mask to transparent white. clear() ignores the renderer's
+    // blend mode so the target is fully cleared even when alpha blending is on.
+    cmd.clear(Color(1.0f, 1.0f, 1.0f, 0.0f));
 
     // Default light direction if no sun is present.
     Vec2 lightDir(0.3f, -0.7f);

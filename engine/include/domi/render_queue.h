@@ -2,17 +2,18 @@
 #define DOMI_RENDER_QUEUE_H
 
 #include "domi/render_command.h"
+#include "domi/math.h"
 #include <vector>
 
-struct SDL_Renderer;
-
 namespace domi {
+
+class IRenderBackend;
 
 // A lightweight queue of 2D render commands.
 //
 // When the renderer is driven from WebAssembly, recording draw calls into a
 // queue and flushing them once per frame greatly reduces wasm-to-native
-// boundary crossings compared to immediate-mode SDL_Renderer calls.
+// boundary crossings compared to immediate-mode rendering.
 class RenderQueue {
 public:
     RenderQueue();
@@ -34,8 +35,12 @@ public:
     void fillPath(const std::vector<Vec2>& points, bool closed);
     void strokePath(const std::vector<Vec2>& points, bool closed);
 
-    // Execute all queued commands against the SDL renderer and clear the queue.
-    void flush(SDL_Renderer* renderer);
+    // Enqueue a material draw using a backend-cached texture handle.
+    // The handle must have been obtained from IRenderBackend::uploadMaterial().
+    void drawMaterial(float x, float y, void* handle);
+
+    // Execute all queued commands against the backend and clear the queue.
+    void flush(IRenderBackend* backend);
 
 private:
     std::vector<RenderCommand> commands_;
@@ -47,8 +52,7 @@ private:
 
     void pushPathCommand(RenderCommand::Type type,
                          const std::vector<Vec2>& points, bool closed);
-    static void applyColor(SDL_Renderer* renderer, const Color& c);
-    static void renderPath(SDL_Renderer* renderer, const StoredPath& path,
+    static void renderPath(IRenderBackend* backend, const StoredPath& path,
                            const Color& color, bool fill, float lineWidth);
 };
 

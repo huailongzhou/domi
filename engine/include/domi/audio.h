@@ -3,9 +3,11 @@
 
 namespace domi {
 
+class IAudioBackend;
+
 class AudioSystem {
 public:
-    AudioSystem();
+    explicit AudioSystem(IAudioBackend* backend);
     ~AudioSystem();
 
     bool init();
@@ -17,7 +19,7 @@ public:
     void stopAll();
 
 private:
-    bool initialized_;
+    IAudioBackend* backend_;
 };
 
 } // namespace domi

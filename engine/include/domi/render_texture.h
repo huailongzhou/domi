@@ -1,37 +1,39 @@
 #ifndef DOMI_RENDER_TEXTURE_H
 #define DOMI_RENDER_TEXTURE_H
 
-#include <SDL3/SDL.h>
+#include "domi/backend/render_backend.h"
 
 namespace domi {
 
 // A render-target texture used by the RenderPass pipeline.
-// Wraps an SDL_Texture created with SDL_TEXTUREACCESS_TARGET.
+// The native handle is opaque to the engine and is managed by the active
+// IRenderBackend implementation.
 class RenderTexture {
 public:
     RenderTexture();
     ~RenderTexture();
 
-    // Create a texture of the given size and SDL pixel format.
-    // Returns true on success.
-    bool create(SDL_Renderer* renderer, int width, int height, SDL_PixelFormat format);
+    // Create a texture of the given size and format. Returns true on success.
+    bool create(IRenderBackend* backend, int width, int height,
+                RenderTextureFormat format = RenderTextureFormat::RGBA8888);
 
-    // Destroy the underlying SDL texture.
+    // Destroy the underlying native texture.
     void destroy();
 
-    bool valid() const { return texture_ != NULL; }
+    bool valid() const { return handle_ != NULL; }
 
-    SDL_Texture* getNative() const { return texture_; }
+    void* getNative() const { return handle_; }
 
     int width() const { return width_; }
     int height() const { return height_; }
-    SDL_PixelFormat format() const { return format_; }
+    RenderTextureFormat format() const { return format_; }
 
 private:
-    SDL_Texture* texture_;
+    IRenderBackend* backend_;
+    void* handle_;
     int width_;
     int height_;
-    SDL_PixelFormat format_;
+    RenderTextureFormat format_;
 };
 
 } // namespace domi

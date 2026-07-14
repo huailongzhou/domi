@@ -1,11 +1,11 @@
 #include "domi/renderer.h"
+#include "domi/backend/render_backend.h"
 #include "domi/canvas2d.h"
 #include "domi/render_command_buffer.h"
 #include "domi/render_pass.h"
 #include "domi/scene_manager.h"
 #include "domi/ecs.h"
 #include "domi/component.h"
-#include <SDL3/SDL.h>
 #include <cstdio>
 
 namespace domi {
@@ -37,20 +37,20 @@ LightComponent* findDirectionalLight(World* world) {
 } // anonymous namespace
 
 Renderer::Renderer()
-    : renderer_(NULL), canvas_(NULL), cmd_(NULL),
+    : backend_(NULL), canvas_(NULL), cmd_(NULL),
       width_(0), height_(0) {}
 
 Renderer::~Renderer() {
     shutdown();
 }
 
-bool Renderer::init(SDL_Renderer* renderer, int width, int height) {
-    if (!renderer || width <= 0 || height <= 0) return false;
+bool Renderer::init(IRenderBackend* backend, int width, int height) {
+    if (!backend || width <= 0 || height <= 0) return false;
 
     shutdown();
 
-    renderer_ = renderer;
-    canvas_ = new Canvas2D(renderer_);
+    backend_ = backend;
+    canvas_ = new Canvas2D(backend_);
     cmd_ = new CommandBuffer(canvas_);
 
     if (!createBuffers(width, height)) {
@@ -78,21 +78,21 @@ void Renderer::shutdown() {
     delete canvas_;
     canvas_ = NULL;
 
-    renderer_ = NULL;
+    backend_ = NULL;
     width_ = 0;
     height_ = 0;
 }
 
 bool Renderer::createBuffers(int w, int h) {
-    if (!colorBuffer_.create(renderer_, w, h, SDL_PIXELFORMAT_RGBA8888)) {
+    if (!colorBuffer_.create(backend_, w, h, RenderTextureFormat::RGBA8888)) {
         fprintf(stderr, "[RENDERER] Failed to create color buffer\n");
         return false;
     }
-    if (!shadowMask_.create(renderer_, w, h, SDL_PIXELFORMAT_RGBA8888)) {
+    if (!shadowMask_.create(backend_, w, h, RenderTextureFormat::RGBA8888)) {
         fprintf(stderr, "[RENDERER] Failed to create shadow mask\n");
         return false;
     }
-    if (!lightBuffer_.create(renderer_, w, h, SDL_PIXELFORMAT_RGBA8888)) {
+    if (!lightBuffer_.create(backend_, w, h, RenderTextureFormat::RGBA8888)) {
         fprintf(stderr, "[RENDERER] Failed to create light buffer\n");
         return false;
     }
@@ -100,12 +100,11 @@ bool Renderer::createBuffers(int w, int h) {
 }
 
 void Renderer::render(World* world, SceneManager* sceneManager) {
-    if (!renderer_ || !canvas_ || !cmd_) return;
+    if (!backend_ || !canvas_ || !cmd_) return;
 
     // Ensure we start on the default target with a clean state.
     canvas_->setRenderTarget(NULL);
-    SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
-    SDL_RenderClear(renderer_);
+    backend_->clear(Color(0.0f, 0.0f, 0.0f, 1.0f));
 
     RenderContext ctx;
     ctx.colorBuffer = &colorBuffer_;
@@ -124,7 +123,7 @@ void Renderer::render(World* world, SceneManager* sceneManager) {
 
     // Submit remaining queued commands and present.
     canvas_->flush();
-    SDL_RenderPresent(renderer_);
+    backend_->present();
 }
 
 void Renderer::addPass(RenderPass* pass) {

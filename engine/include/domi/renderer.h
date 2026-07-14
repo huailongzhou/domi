@@ -5,12 +5,11 @@
 #include "domi/render_texture.h"
 #include <vector>
 
-struct SDL_Renderer;
-
 namespace domi {
 
 class Canvas2D;
 class CommandBuffer;
+class IRenderBackend;
 class RenderPass;
 class SceneManager;
 class Window;
@@ -26,9 +25,9 @@ public:
     Renderer();
     ~Renderer();
 
-    // Initialize with an SDL renderer and back-buffer size.
+    // Initialize with a render backend and back-buffer size.
     // The Renderer creates and owns its Canvas2D and CommandBuffer.
-    bool init(SDL_Renderer* renderer, int width, int height);
+    bool init(IRenderBackend* backend, int width, int height);
 
     // Shutdown and release all passes and buffers.
     void shutdown();
@@ -56,7 +55,7 @@ public:
     int height() const { return height_; }
 
 private:
-    SDL_Renderer* renderer_;
+    IRenderBackend* backend_;
     Canvas2D* canvas_;
     CommandBuffer* cmd_;
     std::vector<RenderPass*> passes_;

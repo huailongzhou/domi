@@ -1,88 +1,71 @@
 #include "domi/input.h"
+#include "domi/backend/input_backend.h"
 #include <cstdio>
 
 namespace domi {
 
-InputSystem::InputSystem()
-    : mouseX_(0), mouseY_(0), mouseDeltaX_(0), mouseDeltaY_(0), scrollX_(0), scrollY_(0) {
-    memset(keysCurr_, 0, sizeof(keysCurr_));
-    memset(keysPrev_, 0, sizeof(keysPrev_));
-    memset(mouseCurr_, 0, sizeof(mouseCurr_));
-    memset(mousePrev_, 0, sizeof(mousePrev_));
+InputSystem::InputSystem(IInputBackend* backend)
+    : backend_(backend) {}
+
+InputSystem::~InputSystem() {
+    shutdown();
 }
 
-InputSystem::~InputSystem() {}
+bool InputSystem::init() {
+    if (!backend_) return false;
+    return backend_->init();
+}
+
+void InputSystem::shutdown() {
+    if (backend_) backend_->shutdown();
+}
 
 void InputSystem::update() {
-    memcpy(keysPrev_, keysCurr_, sizeof(keysCurr_));
-    memcpy(mousePrev_, mouseCurr_, sizeof(mouseCurr_));
-    mouseDeltaX_ = 0;
-    mouseDeltaY_ = 0;
-    scrollX_ = 0;
-    scrollY_ = 0;
+    if (backend_) backend_->update();
 }
 
 void InputSystem::handleEvent(const SDL_Event& e) {
-    switch (e.type) {
-    case SDL_EVENT_KEY_DOWN:
-        if (e.key.scancode < MAX_KEYS) keysCurr_[e.key.scancode] = true;
-        break;
-    case SDL_EVENT_KEY_UP:
-        if (e.key.scancode < MAX_KEYS) keysCurr_[e.key.scancode] = false;
-        break;
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (e.button.button < MAX_MOUSE) mouseCurr_[e.button.button] = true;
-        break;
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-        if (e.button.button < MAX_MOUSE) mouseCurr_[e.button.button] = false;
-        break;
-    case SDL_EVENT_MOUSE_MOTION:
-        mouseDeltaX_ = e.motion.xrel;
-        mouseDeltaY_ = e.motion.yrel;
-        mouseX_ = e.motion.x;
-        mouseY_ = e.motion.y;
-        break;
-    case SDL_EVENT_MOUSE_WHEEL:
-        scrollX_ = e.wheel.x;
-        scrollY_ = e.wheel.y;
-        break;
-    }
+    if (backend_) backend_->handleEvent(&e);
 }
 
 bool InputSystem::isKeyDown(int key) const {
-    return key >= 0 && key < MAX_KEYS && keysCurr_[key];
+    return backend_ ? backend_->isKeyDown(key) : false;
 }
 
 bool InputSystem::isKeyPressed(int key) const {
-    return key >= 0 && key < MAX_KEYS && keysCurr_[key] && !keysPrev_[key];
+    return backend_ ? backend_->isKeyPressed(key) : false;
 }
 
 bool InputSystem::isKeyReleased(int key) const {
-    return key >= 0 && key < MAX_KEYS && !keysCurr_[key] && keysPrev_[key];
+    return backend_ ? backend_->isKeyReleased(key) : false;
 }
 
 bool InputSystem::isMouseButtonDown(int button) const {
-    return button >= 0 && button < MAX_MOUSE && mouseCurr_[button];
+    return backend_ ? backend_->isMouseButtonDown(button) : false;
 }
 
 bool InputSystem::isMouseButtonPressed(int button) const {
-    return button >= 0 && button < MAX_MOUSE && mouseCurr_[button] && !mousePrev_[button];
+    return backend_ ? backend_->isMouseButtonPressed(button) : false;
+}
+
+float InputSystem::getMouseX() const {
+    return backend_ ? backend_->getMouseX() : 0;
+}
+
+float InputSystem::getMouseY() const {
+    return backend_ ? backend_->getMouseY() : 0;
+}
+
+float InputSystem::getMouseDeltaX() const {
+    return backend_ ? backend_->getMouseDeltaX() : 0;
+}
+
+float InputSystem::getMouseDeltaY() const {
+    return backend_ ? backend_->getMouseDeltaY() : 0;
 }
 
 float InputSystem::getAxis(const char* name) const {
-    if (strcmp(name, "Horizontal") == 0) {
-        float v = 0;
-        if (isKeyDown(SDL_SCANCODE_D) || isKeyDown(SDL_SCANCODE_RIGHT)) v += 1;
-        if (isKeyDown(SDL_SCANCODE_A) || isKeyDown(SDL_SCANCODE_LEFT)) v -= 1;
-        return v;
-    }
-    if (strcmp(name, "Vertical") == 0) {
-        float v = 0;
-        if (isKeyDown(SDL_SCANCODE_W) || isKeyDown(SDL_SCANCODE_UP)) v -= 1;
-        if (isKeyDown(SDL_SCANCODE_S) || isKeyDown(SDL_SCANCODE_DOWN)) v += 1;
-        return v;
-    }
-    return 0;
+    return backend_ ? backend_->getAxis(name) : 0;
 }
 
 } // namespace domi

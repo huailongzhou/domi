@@ -3,6 +3,7 @@
 
 #include "domi/math.h"
 #include "domi/material.h"
+#include "domi/types.h"
 
 namespace domi {
 
@@ -20,6 +21,9 @@ public:
     // Switch the rendering target. Flushes any pending queued commands for the
     // previous target before changing.
     void setTarget(RenderTexture* target);
+
+    // Clear the current target to the given color, ignoring the current blend mode.
+    void clear(const Color& c);
 
     // State
     void setFillColor(const Color& c);
@@ -46,6 +50,7 @@ public:
 
     // Draw a render texture into the current target.
     void drawTexture(float x, float y, RenderTexture* texture);
+    void drawTexture(float x, float y, RenderTexture* texture, BlendMode mode);
 
     // Force submit any queued commands for the current target.
     void flush();

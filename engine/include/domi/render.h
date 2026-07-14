@@ -3,18 +3,22 @@
 
 #include "domi/math.h"
 #include "domi/ecs.h"
-#include <SDL3/SDL.h>
+
+struct SDL_GPUBuffer;
+struct SDL_GPUGraphicsPipeline;
+struct SDL_GPUTexture;
 
 namespace domi {
 
-class Window;
+class IRenderBackend;
+class IWindowBackend;
 class SceneManager;
 class Canvas2D;
 class Renderer;
 
 class RenderSystem {
 public:
-    RenderSystem(Window* window);
+    RenderSystem(IRenderBackend* renderBackend, IWindowBackend* windowBackend);
     ~RenderSystem();
 
     bool init();
@@ -36,7 +40,8 @@ public:
     int getHeight() const;
 
 private:
-    Window* window_;
+    IRenderBackend* renderBackend_;
+    IWindowBackend* windowBackend_;
     bool useGPU_;
     Canvas2D* canvas_;
     Renderer* renderer_;

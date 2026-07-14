@@ -20,6 +20,10 @@ void CommandBuffer::setTarget(RenderTexture* target) {
     currentTarget_ = target;
 }
 
+void CommandBuffer::clear(const Color& c) {
+    if (canvas_) canvas_->clear(c);
+}
+
 void CommandBuffer::setFillColor(const Color& c) {
     if (canvas_) canvas_->setFillColor(c);
 }
@@ -82,6 +86,10 @@ void CommandBuffer::drawMaterial(float x, float y, const Material& material) {
 
 void CommandBuffer::drawTexture(float x, float y, RenderTexture* texture) {
     if (canvas_) canvas_->drawTexture(x, y, texture);
+}
+
+void CommandBuffer::drawTexture(float x, float y, RenderTexture* texture, BlendMode mode) {
+    if (canvas_) canvas_->drawTexture(x, y, texture, mode);
 }
 
 void CommandBuffer::flush() {

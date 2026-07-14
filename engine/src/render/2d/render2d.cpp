@@ -1,5 +1,6 @@
 #include "domi/render.h"
-#include "domi/window.h"
+#include "domi/backend/render_backend.h"
+#include "domi/backend/window_backend.h"
 #include "domi/component.h"
 #include "domi/math.h"
 #include "domi/canvas2d.h"
@@ -165,8 +166,10 @@ static void multiply_matrix(const float* lhs, const float* rhs, float* r) {
 
 } // anonymous namespace
 
-RenderSystem::RenderSystem(Window* window)
-    : window_(window), useGPU_(false), canvas_(NULL), renderer_(NULL),
+RenderSystem::RenderSystem(IRenderBackend* renderBackend,
+                             IWindowBackend* windowBackend)
+    : renderBackend_(renderBackend), windowBackend_(windowBackend),
+      useGPU_(false), canvas_(NULL), renderer_(NULL),
       gpu3DInited_(false), cubeVertexBuffer_(NULL), dynamicVertexBuffer_(NULL),
       cubePipeline_(NULL), depthTexture_(NULL), drawableW_(0), drawableH_(0),
       angleX_(0), angleY_(0), angleZ_(0), dynamicVertexCapacity_(0) {}
@@ -176,25 +179,22 @@ RenderSystem::~RenderSystem() {
 }
 
 bool RenderSystem::init() {
-    if (!window_) return false;
-    useGPU_ = (window_->getGPUDevice() != NULL);
-    SDL_Renderer* sdlRenderer = window_->getSDLRenderer();
-    if (sdlRenderer) {
-        renderer_ = new Renderer();
-        if (!renderer_->init(sdlRenderer, window_->getWidth(), window_->getHeight())) {
-            delete renderer_;
-            renderer_ = NULL;
-            return false;
-        }
-        canvas_ = renderer_->getCanvas2D();
-
-        // Build the default 2D deferred/compositing pipeline.
-        renderer_->addPass(new GeometryPass(NULL));
-        renderer_->addPass(new ShadowPass());
-        renderer_->addPass(new LightingPass());
-        renderer_->addPass(new CompositePass());
-        renderer_->addPass(new UIPass());
+    if (!renderBackend_ || !windowBackend_) return false;
+    useGPU_ = (windowBackend_->getNativeGPUDevice() != NULL);
+    renderer_ = new Renderer();
+    if (!renderer_->init(renderBackend_, windowBackend_->getWidth(), windowBackend_->getHeight())) {
+        delete renderer_;
+        renderer_ = NULL;
+        return false;
     }
+    canvas_ = renderer_->getCanvas2D();
+
+    // Build the default 2D deferred/compositing pipeline.
+    renderer_->addPass(new GeometryPass(NULL));
+    renderer_->addPass(new ShadowPass());
+    renderer_->addPass(new LightingPass());
+    renderer_->addPass(new CompositePass());
+    renderer_->addPass(new UIPass());
     return true;
 }
 
@@ -206,15 +206,15 @@ void RenderSystem::shutdown() {
 }
 
 void RenderSystem::render(World* world, SceneManager* sceneManager) {
-    if (!window_) return;
+    if (!renderBackend_ || !windowBackend_) return;
 
     // Check whether any entity wants 3D rendering.
     bool has3D = !world->queryEntitiesWith(ComponentTypeMask().withMesh()).empty();
 
     if (has3D) {
         // 3D path: claim the GPU window once and keep it until 2D is needed.
-        if (!window_->isGPUClaimed()) {
-            if (!window_->claimGPU()) {
+        if (!windowBackend_->isGPUClaimed()) {
+            if (!windowBackend_->claimGPU()) {
                 fprintf(stderr, "[RENDER] Failed to claim GPU for 3D\n");
                 return;
             }
@@ -223,8 +223,8 @@ void RenderSystem::render(World* world, SceneManager* sceneManager) {
         render3D(world);
     } else {
         // 2D path: release GPU if it was claimed, then use RenderPass pipeline.
-        if (window_->isGPUClaimed()) {
-            window_->releaseGPU();
+        if (windowBackend_->isGPUClaimed()) {
+            windowBackend_->releaseGPU();
         }
         if (renderer_) {
             // Make sure the GeometryPass has the current SceneManager.
@@ -240,39 +240,14 @@ void RenderSystem::render(World* world, SceneManager* sceneManager) {
 }
 
 void RenderSystem::render2D(World* world) {
-    SDL_Renderer* renderer = window_->getSDLRenderer();
-    if (!renderer) {
-        fprintf(stderr, "[RENDER] No 2D renderer available\n");
-        return;
-    }
-
-    std::vector<Entity> entities = world->queryEntitiesWith(
-        ComponentTypeMask().withTransform().withSprite());
-
-    for (size_t i = 0; i < entities.size(); ++i) {
-        Entity e = entities[i];
-        TransformComponent* t = world->getComponent<TransformComponent>(e);
-        SpriteComponent* s = world->getComponent<SpriteComponent>(e);
-        if (!t || !s) continue;
-
-        float w = 64.0f * t->transform.scale.x;
-        float h = 64.0f * t->transform.scale.y;
-        SDL_FRect rect;
-        rect.x = t->transform.position.x - w * 0.5f;
-        rect.y = t->transform.position.y - h * 0.5f;
-        rect.w = w;
-        rect.h = h;
-        SDL_SetRenderDrawColor(renderer,
-            (uint8_t)(s->color.r * 255),
-            (uint8_t)(s->color.g * 255),
-            (uint8_t)(s->color.b * 255),
-            (uint8_t)(s->color.a * 255));
-        SDL_RenderFillRect(renderer, &rect);
-    }
+    // Legacy immediate-mode 2D path. The engine now uses the RenderPass pipeline
+    // via Renderer::render(); this function is kept for compatibility but does
+    // nothing by default.
+    (void)world;
 }
 
 bool RenderSystem::initGPU3D() {
-    SDL_GPUDevice* device = window_->getGPUDevice();
+    SDL_GPUDevice* device = static_cast<SDL_GPUDevice*>(windowBackend_->getNativeGPUDevice());
     if (!device) return false;
 
     SDL_GPUShaderFormat format = SDL_GetGPUShaderFormats(device);
@@ -371,7 +346,7 @@ bool RenderSystem::initGPU3D() {
     }
 
     // Get swapchain format for color target
-    SDL_GPUTextureFormat swapFormat = SDL_GetGPUSwapchainTextureFormat(device, window_->getSDLWindow());
+    SDL_GPUTextureFormat swapFormat = SDL_GetGPUSwapchainTextureFormat(device, static_cast<SDL_Window*>(windowBackend_->getNativeWindow()));
 
     // Create pipeline
     SDL_GPUGraphicsPipelineCreateInfo pipeInfo;
@@ -428,7 +403,7 @@ bool RenderSystem::initGPU3D() {
 
     // Create initial depth texture
     int w, h;
-    SDL_GetWindowSizeInPixels(window_->getSDLWindow(), &w, &h);
+    SDL_GetWindowSizeInPixels(static_cast<SDL_Window*>(windowBackend_->getNativeWindow()), &w, &h);
     if (!createDepthTexture(w, h)) {
         return false;
     }
@@ -439,7 +414,7 @@ bool RenderSystem::initGPU3D() {
 }
 
 bool RenderSystem::createDepthTexture(int w, int h) {
-    SDL_GPUDevice* device = window_->getGPUDevice();
+    SDL_GPUDevice* device = static_cast<SDL_GPUDevice*>(windowBackend_->getNativeGPUDevice());
     if (!device) return false;
 
     SDL_ReleaseGPUTexture(device, depthTexture_);
@@ -466,7 +441,9 @@ bool RenderSystem::createDepthTexture(int w, int h) {
 }
 
 void RenderSystem::shutdownGPU3D() {
-    SDL_GPUDevice* device = window_ ? window_->getGPUDevice() : NULL;
+    SDL_GPUDevice* device = windowBackend_
+        ? static_cast<SDL_GPUDevice*>(windowBackend_->getNativeGPUDevice())
+        : NULL;
     if (!device) return;
 
     SDL_ReleaseGPUTexture(device, depthTexture_);
@@ -483,7 +460,7 @@ void RenderSystem::shutdownGPU3D() {
 }
 
 void RenderSystem::render3D(World* world) {
-    SDL_GPUDevice* device = window_->getGPUDevice();
+    SDL_GPUDevice* device = static_cast<SDL_GPUDevice*>(windowBackend_->getNativeGPUDevice());
     if (!device) return;
 
     if (!gpu3DInited_ && !initGPU3D()) {
@@ -498,7 +475,7 @@ void RenderSystem::render3D(World* world) {
 
     SDL_GPUTexture* swapchain = NULL;
     Uint32 drawableW, drawableH;
-    if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, window_->getSDLWindow(), &swapchain, &drawableW, &drawableH)) {
+    if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, static_cast<SDL_Window*>(windowBackend_->getNativeWindow()), &swapchain, &drawableW, &drawableH)) {
         fprintf(stderr, "[RENDER3D] Failed to acquire swapchain: %s\n", SDL_GetError());
         SDL_SubmitGPUCommandBuffer(cmd);
         return;
@@ -675,11 +652,11 @@ void RenderSystem::setCamera(const Mat4& view, const Mat4& projection) {
 }
 
 int RenderSystem::getWidth() const {
-    return window_ ? window_->getWidth() : 0;
+    return windowBackend_ ? windowBackend_->getWidth() : 0;
 }
 
 int RenderSystem::getHeight() const {
-    return window_ ? window_->getHeight() : 0;
+    return windowBackend_ ? windowBackend_->getHeight() : 0;
 }
 
 } // namespace domi

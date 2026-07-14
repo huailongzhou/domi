@@ -1,6 +1,5 @@
 #include "domi/render_queue.h"
-#include <SDL3/SDL.h>
-#include <algorithm>
+#include "domi/backend/render_backend.h"
 
 namespace domi {
 
@@ -83,6 +82,13 @@ void RenderQueue::strokePath(const std::vector<Vec2>& points, bool closed) {
     pushPathCommand(RenderCommand::StrokePath, points, closed);
 }
 
+void RenderQueue::drawMaterial(float x, float y, void* handle) {
+    RenderCommand cmd;
+    cmd.type = RenderCommand::DrawMaterial;
+    cmd.params.material = { x, y, handle };
+    commands_.push_back(cmd);
+}
+
 void RenderQueue::pushPathCommand(RenderCommand::Type type,
                                   const std::vector<Vec2>& points, bool closed) {
     int index = static_cast<int>(paths_.size());
@@ -97,63 +103,18 @@ void RenderQueue::pushPathCommand(RenderCommand::Type type,
     commands_.push_back(cmd);
 }
 
-void RenderQueue::applyColor(SDL_Renderer* renderer, const Color& c) {
-    SDL_SetRenderDrawColor(renderer,
-        (uint8_t)(c.r * 255),
-        (uint8_t)(c.g * 255),
-        (uint8_t)(c.b * 255),
-        (uint8_t)(c.a * 255));
-}
-
-void RenderQueue::renderPath(SDL_Renderer* renderer, const StoredPath& path,
+void RenderQueue::renderPath(IRenderBackend* backend, const StoredPath& path,
                              const Color& color, bool fill, float lineWidth) {
-    size_t n = path.points.size();
-    if (n < 2) return;
-
+    if (!backend) return;
     if (fill) {
-        if (n < 3) return;
-        std::vector<SDL_Vertex> vertices;
-        vertices.reserve(n);
-        std::vector<int> indices;
-        indices.reserve((n - 2) * 3);
-
-        SDL_FColor col = { color.r, color.g, color.b, color.a };
-        SDL_FPoint zero = { 0.0f, 0.0f };
-        for (size_t i = 0; i < n; ++i) {
-            SDL_Vertex v;
-            v.position.x = path.points[i].x;
-            v.position.y = path.points[i].y;
-            v.color = col;
-            v.tex_coord = zero;
-            vertices.push_back(v);
-        }
-        for (size_t i = 1; i + 1 < n; ++i) {
-            indices.push_back(0);
-            indices.push_back((int)i);
-            indices.push_back((int)(i + 1));
-        }
-        SDL_RenderGeometry(renderer, NULL,
-                           vertices.data(), (int)vertices.size(),
-                           indices.data(), (int)indices.size());
+        backend->fillPath(path.points, path.closed, color);
     } else {
-        SDL_SetRenderDrawColor(renderer,
-            (uint8_t)(color.r * 255),
-            (uint8_t)(color.g * 255),
-            (uint8_t)(color.b * 255),
-            (uint8_t)(color.a * 255));
-        for (size_t i = 0; i + 1 < n; ++i) {
-            SDL_RenderLine(renderer, path.points[i].x, path.points[i].y,
-                           path.points[i + 1].x, path.points[i + 1].y);
-        }
-        if (path.closed && n > 2) {
-            SDL_RenderLine(renderer, path.points.back().x, path.points.back().y,
-                           path.points[0].x, path.points[0].y);
-        }
+        backend->strokePath(path.points, path.closed, color, lineWidth);
     }
 }
 
-void RenderQueue::flush(SDL_Renderer* renderer) {
-    if (!renderer || commands_.empty()) {
+void RenderQueue::flush(IRenderBackend* backend) {
+    if (!backend || commands_.empty()) {
         clear();
         return;
     }
@@ -172,79 +133,47 @@ void RenderQueue::flush(SDL_Renderer* renderer) {
             case RenderCommand::SetLineWidth:
                 currentLineWidth_ = cmd.params.lineWidth.lineWidth;
                 break;
-            case RenderCommand::FillRect: {
-                applyColor(renderer, currentFillColor_);
-                SDL_FRect r = { cmd.params.rect.x, cmd.params.rect.y,
-                                cmd.params.rect.w, cmd.params.rect.h };
-                SDL_RenderFillRect(renderer, &r);
+            case RenderCommand::FillRect:
+                backend->setFillColor(currentFillColor_);
+                backend->fillRect(cmd.params.rect.x, cmd.params.rect.y,
+                                  cmd.params.rect.w, cmd.params.rect.h);
                 break;
-            }
-            case RenderCommand::StrokeRect: {
-                applyColor(renderer, currentStrokeColor_);
-                SDL_FRect r = { cmd.params.rect.x, cmd.params.rect.y,
-                                cmd.params.rect.w, cmd.params.rect.h };
-                SDL_RenderRect(renderer, &r);
+            case RenderCommand::StrokeRect:
+                backend->setStrokeColor(currentStrokeColor_);
+                backend->strokeRect(cmd.params.rect.x, cmd.params.rect.y,
+                                    cmd.params.rect.w, cmd.params.rect.h);
                 break;
-            }
-            case RenderCommand::ClearRect: {
-                applyColor(renderer, currentFillColor_);
-                SDL_FRect r = { cmd.params.rect.x, cmd.params.rect.y,
-                                cmd.params.rect.w, cmd.params.rect.h };
-                SDL_RenderFillRect(renderer, &r);
+            case RenderCommand::ClearRect:
+                backend->setFillColor(currentFillColor_);
+                backend->fillRect(cmd.params.rect.x, cmd.params.rect.y,
+                                  cmd.params.rect.w, cmd.params.rect.h);
                 break;
-            }
-            case RenderCommand::DrawLine: {
-                applyColor(renderer, currentStrokeColor_);
-                SDL_RenderLine(renderer, cmd.params.line.x1, cmd.params.line.y1,
-                               cmd.params.line.x2, cmd.params.line.y2);
+            case RenderCommand::DrawLine:
+                backend->setStrokeColor(currentStrokeColor_);
+                backend->drawLine(cmd.params.line.x1, cmd.params.line.y1,
+                                  cmd.params.line.x2, cmd.params.line.y2);
                 break;
-            }
-            case RenderCommand::FillCircle: {
-                const auto& c = cmd.params.circle;
-                int segments = c.segments;
-                if (segments < 3) segments = 3;
-                std::vector<SDL_Vertex> vertices;
-                vertices.reserve(segments + 2);
-                std::vector<int> indices;
-                indices.reserve(segments * 3);
-                SDL_FColor col = { currentFillColor_.r, currentFillColor_.g,
-                                   currentFillColor_.b, currentFillColor_.a };
-                SDL_FPoint zero = { 0.0f, 0.0f };
-                SDL_Vertex center;
-                center.position.x = c.x;
-                center.position.y = c.y;
-                center.color = col;
-                center.tex_coord = zero;
-                vertices.push_back(center);
-                for (int j = 0; j <= segments; ++j) {
-                    float angle = (float)j / (float)segments * 2.0f * 3.14159265f;
-                    SDL_Vertex v;
-                    v.position.x = c.x + c.radius * SDL_cosf(angle);
-                    v.position.y = c.y + c.radius * SDL_sinf(angle);
-                    v.color = col;
-                    v.tex_coord = zero;
-                    vertices.push_back(v);
+            case RenderCommand::FillCircle:
+                backend->setFillColor(currentFillColor_);
+                backend->fillCircle(cmd.params.circle.x, cmd.params.circle.y,
+                                    cmd.params.circle.radius,
+                                    cmd.params.circle.segments);
+                break;
+            case RenderCommand::FillPath:
+                renderPath(backend, paths_[cmd.params.path.pathIndex],
+                           currentFillColor_, true, currentLineWidth_);
+                break;
+            case RenderCommand::StrokePath:
+                renderPath(backend, paths_[cmd.params.path.pathIndex],
+                           currentStrokeColor_, false, currentLineWidth_);
+                break;
+            case RenderCommand::DrawMaterial:
+                if (cmd.params.material.handle) {
+                    backend->drawMaterial(cmd.params.material.x,
+                                          cmd.params.material.y,
+                                          cmd.params.material.handle);
                 }
-                for (int j = 0; j < segments; ++j) {
-                    indices.push_back(0);
-                    indices.push_back(j + 1);
-                    indices.push_back(j + 2);
-                }
-                SDL_RenderGeometry(renderer, NULL,
-                                   vertices.data(), (int)vertices.size(),
-                                   indices.data(), (int)indices.size());
                 break;
-            }
-            case RenderCommand::FillPath: {
-                const StoredPath& path = paths_[cmd.params.path.pathIndex];
-                renderPath(renderer, path, currentFillColor_, true, currentLineWidth_);
-                break;
-            }
-            case RenderCommand::StrokePath: {
-                const StoredPath& path = paths_[cmd.params.path.pathIndex];
-                renderPath(renderer, path, currentStrokeColor_, false, currentLineWidth_);
-                break;
-            }
         }
     }
 

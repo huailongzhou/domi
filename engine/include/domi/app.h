@@ -7,6 +7,7 @@
 
 namespace domi {
 
+class SDLBackend;
 class ThreadPool;
 class ScriptSystem;
 class RenderSystem;
@@ -58,6 +59,7 @@ private:
     void fixedUpdate();
     void render();
 
+    SDLBackend* backend_;
     Window window_;
     World world_;
     InputSystem* input_;

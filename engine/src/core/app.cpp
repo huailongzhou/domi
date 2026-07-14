@@ -5,6 +5,7 @@
 #include "domi/audio.h"
 #include "domi/scene_manager.h"
 #include "domi/thread_pool.h"
+#include "domi/backend/sdl_backend.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
 #include <thread>
@@ -17,9 +18,10 @@ App& App::instance() {
 }
 
 App::App()
-    : input_(NULL), script_(NULL), render_(NULL), audio_(NULL), sceneManager_(NULL),
-      threadPool_(NULL), running_(false), initialized_(false), deltaTime_(0), totalTime_(0),
-      fixedTime_(1.0 / 60.0), fixedAccumulator_(0), frameCount_(0) {}
+    : backend_(NULL), input_(NULL), script_(NULL), render_(NULL), audio_(NULL),
+      sceneManager_(NULL), threadPool_(NULL), running_(false), initialized_(false),
+      deltaTime_(0), totalTime_(0), fixedTime_(1.0 / 60.0), fixedAccumulator_(0),
+      frameCount_(0) {}
 
 App::~App() {
     if (initialized_) shutdown();
@@ -28,20 +30,30 @@ App::~App() {
 bool App::init(const AppConfig& config) {
     if (initialized_) return true;
 
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD)) {
-        fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
+    if (!SDLBackend::initializePlatform()) {
         return false;
     }
 
-    if (!window_.create(config.title, config.width, config.height)) {
-        SDL_Quit();
+    backend_ = new SDLBackend();
+    if (!backend_->create(config.title, config.width, config.height)) {
+        delete backend_;
+        backend_ = NULL;
+        SDLBackend::shutdownPlatform();
         return false;
     }
 
-    input_ = new InputSystem();
+    if (!window_.init(backend_)) {
+        backend_->destroy();
+        delete backend_;
+        backend_ = NULL;
+        SDLBackend::shutdownPlatform();
+        return false;
+    }
+
+    input_ = new InputSystem(backend_);
     script_ = new ScriptSystem();
-    render_ = new RenderSystem(&window_);
-    audio_ = new AudioSystem();
+    render_ = new RenderSystem(backend_, backend_);
+    audio_ = new AudioSystem(backend_);
     sceneManager_ = new SceneManager();
 
     size_t threadCount = std::thread::hardware_concurrency();
@@ -58,6 +70,10 @@ bool App::init(const AppConfig& config) {
         fprintf(stderr, "RenderSystem init failed\n");
         shutdown();
         return false;
+    }
+
+    if (!input_->init()) {
+        fprintf(stderr, "InputSystem init failed\n");
     }
 
     if (!audio_->init()) {
@@ -140,7 +156,12 @@ void App::shutdown() {
     delete input_; input_ = NULL;
 
     window_.destroy();
-    SDL_Quit();
+    if (backend_) {
+        backend_->destroy();
+        delete backend_;
+        backend_ = NULL;
+    }
+    SDLBackend::shutdownPlatform();
     initialized_ = false;
 }
 

@@ -21,6 +21,7 @@ struct RenderCommand {
         FillCircle,
         FillPath,
         StrokePath,
+        DrawMaterial,
     } type;
 
     union Params {
@@ -30,6 +31,7 @@ struct RenderCommand {
         struct { float x, y, radius; int segments; } circle;
         struct { float lineWidth; } lineWidth;
         struct { int pathIndex; } path;
+        struct { float x, y; void* handle; } material;
     } params;
 };
 

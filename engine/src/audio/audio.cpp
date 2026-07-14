@@ -1,30 +1,23 @@
 #include "domi/audio.h"
-#include <SDL3/SDL.h>
+#include "domi/backend/audio_backend.h"
 #include <cstdio>
 
 namespace domi {
 
-AudioSystem::AudioSystem() : initialized_(false) {}
+AudioSystem::AudioSystem(IAudioBackend* backend)
+    : backend_(backend) {}
 
 AudioSystem::~AudioSystem() {
     shutdown();
 }
 
 bool AudioSystem::init() {
-    if (initialized_) return true;
-    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-        fprintf(stderr, "SDL audio init failed: %s\n", SDL_GetError());
-        return false;
-    }
-    initialized_ = true;
-    return true;
+    if (!backend_) return false;
+    return backend_->init();
 }
 
 void AudioSystem::shutdown() {
-    if (initialized_) {
-        SDL_QuitSubSystem(SDL_INIT_AUDIO);
-        initialized_ = false;
-    }
+    if (backend_) backend_->shutdown();
 }
 
 void AudioSystem::update(double dt) {
@@ -32,14 +25,15 @@ void AudioSystem::update(double dt) {
 }
 
 void AudioSystem::play(const char* path, bool loop) {
-    (void)path; (void)loop;
-    // TODO: implement audio playback
+    if (backend_) backend_->play(path, loop);
 }
 
 void AudioSystem::stop(const char* path) {
-    (void)path;
+    if (backend_) backend_->stop(path);
 }
 
-void AudioSystem::stopAll() {}
+void AudioSystem::stopAll() {
+    if (backend_) backend_->stopAll();
+}
 
 } // namespace domi

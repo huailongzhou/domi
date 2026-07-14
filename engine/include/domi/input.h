@@ -2,16 +2,18 @@
 #define DOMI_INPUT_H
 
 #include <SDL3/SDL.h>
-#include <cstdint>
-#include <cstring>
 
 namespace domi {
 
+class IInputBackend;
+
 class InputSystem {
 public:
-    InputSystem();
+    explicit InputSystem(IInputBackend* backend);
     ~InputSystem();
 
+    bool init();
+    void shutdown();
     void update();
     void handleEvent(const SDL_Event& e);
 
@@ -21,25 +23,15 @@ public:
 
     bool isMouseButtonDown(int button) const;
     bool isMouseButtonPressed(int button) const;
-    float getMouseX() const { return mouseX_; }
-    float getMouseY() const { return mouseY_; }
-    float getMouseDeltaX() const { return mouseDeltaX_; }
-    float getMouseDeltaY() const { return mouseDeltaY_; }
+    float getMouseX() const;
+    float getMouseY() const;
+    float getMouseDeltaX() const;
+    float getMouseDeltaY() const;
 
     float getAxis(const char* name) const;
 
 private:
-    static const int MAX_KEYS = 512;
-    static const int MAX_MOUSE = 8;
-
-    bool keysCurr_[MAX_KEYS];
-    bool keysPrev_[MAX_KEYS];
-    bool mouseCurr_[MAX_MOUSE];
-    bool mousePrev_[MAX_MOUSE];
-
-    float mouseX_, mouseY_;
-    float mouseDeltaX_, mouseDeltaY_;
-    float scrollX_, scrollY_;
+    IInputBackend* backend_;
 };
 
 } // namespace domi
