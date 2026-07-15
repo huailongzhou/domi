@@ -31,7 +31,13 @@ struct RenderCommand {
         struct { float x, y, radius; int segments; } circle;
         struct { float lineWidth; } lineWidth;
         struct { int pathIndex; } path;
-        struct { float x, y; void* handle; } material;
+        struct {
+            float x, y;
+            float angle;
+            float centerX, centerY;
+            float scaleX, scaleY;
+            void* handle;
+        } material;
     } params;
 };
 

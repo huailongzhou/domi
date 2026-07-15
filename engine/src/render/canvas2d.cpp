@@ -16,9 +16,6 @@ Canvas2D::Canvas2D(IRenderBackend* backend)
       lockedPitch_(0),
       renderMode_(RenderMode::PAINTER),
       batching_(true),
-      fillColor_(1, 1, 1, 1),
-      strokeColor_(0, 0, 0, 1),
-      lineWidth_(1.0f),
       pathClosed_(false) {
     depthBuffer_.assign(width_ * height_, 1.0f);
 }
@@ -41,50 +38,111 @@ void Canvas2D::flush() {
     }
 }
 
+void Canvas2D::save() {
+    stateStack_.push_back(state_);
+}
+
+void Canvas2D::restore() {
+    if (stateStack_.empty()) return;
+    state_ = stateStack_.back();
+    stateStack_.pop_back();
+}
+
+void Canvas2D::translate(float x, float y) {
+    state_.transform = state_.transform * Affine2D::translate(x, y);
+}
+
+void Canvas2D::rotate(float radians) {
+    state_.transform = state_.transform * Affine2D::rotate(radians);
+}
+
+void Canvas2D::scale(float x, float y) {
+    state_.transform = state_.transform * Affine2D::scale(x, y);
+}
+
+void Canvas2D::transform(float a, float b, float c, float d, float e, float f) {
+    state_.transform = state_.transform * Affine2D(a, b, c, d, e, f);
+}
+
+void Canvas2D::setTransform(float a, float b, float c, float d, float e, float f) {
+    state_.transform = Affine2D(a, b, c, d, e, f);
+}
+
+void Canvas2D::resetTransform() {
+    state_.transform.identity();
+}
+
 void Canvas2D::setFillColor(const Color& c) {
-    fillColor_ = c;
+    state_.fillColor = c;
     if (batching_) {
         queue_.setFillColor(c);
     }
 }
 
 void Canvas2D::setStrokeColor(const Color& c) {
-    strokeColor_ = c;
+    state_.strokeColor = c;
     if (batching_) {
         queue_.setStrokeColor(c);
     }
 }
 
 void Canvas2D::setLineWidth(float w) {
-    lineWidth_ = w;
+    state_.lineWidth = w;
     if (batching_) {
         queue_.setLineWidth(w);
     }
 }
 
+void Canvas2D::applyTransform(std::vector<Vec2>& points) const {
+    for (size_t i = 0; i < points.size(); ++i) {
+        points[i] = state_.transform * points[i];
+    }
+}
+
 void Canvas2D::fillRect(float x, float y, float w, float h) {
     if (!backend_) return;
+    std::vector<Vec2> rect;
+    rect.reserve(4);
+    rect.push_back(Vec2(x, y));
+    rect.push_back(Vec2(x + w, y));
+    rect.push_back(Vec2(x + w, y + h));
+    rect.push_back(Vec2(x, y + h));
+    applyTransform(rect);
     if (batching_) {
-        queue_.fillRect(x, y, w, h);
+        queue_.fillPath(rect, true);
         return;
     }
-    backend_->setFillColor(fillColor_);
-    backend_->fillRect(x, y, w, h);
+    backend_->setFillColor(state_.fillColor);
+    backend_->fillPath(rect, true, state_.fillColor);
 }
 
 void Canvas2D::strokeRect(float x, float y, float w, float h) {
     if (!backend_) return;
+    std::vector<Vec2> rect;
+    rect.reserve(4);
+    rect.push_back(Vec2(x, y));
+    rect.push_back(Vec2(x + w, y));
+    rect.push_back(Vec2(x + w, y + h));
+    rect.push_back(Vec2(x, y + h));
+    applyTransform(rect);
     if (batching_) {
-        queue_.strokeRect(x, y, w, h);
+        queue_.strokePath(rect, true);
         return;
     }
-    backend_->setStrokeColor(strokeColor_);
-    backend_->strokeRect(x, y, w, h);
+    backend_->setStrokeColor(state_.strokeColor);
+    backend_->strokePath(rect, true, state_.strokeColor, state_.lineWidth);
 }
 
 void Canvas2D::clearRect(float x, float y, float w, float h) {
     if (batching_) {
-        queue_.clearRect(x, y, w, h);
+        std::vector<Vec2> rect;
+        rect.reserve(4);
+        rect.push_back(Vec2(x, y));
+        rect.push_back(Vec2(x + w, y));
+        rect.push_back(Vec2(x + w, y + h));
+        rect.push_back(Vec2(x, y + h));
+        applyTransform(rect);
+        queue_.fillPath(rect, true);
     } else {
         fillRect(x, y, w, h);
     }
@@ -92,22 +150,32 @@ void Canvas2D::clearRect(float x, float y, float w, float h) {
 
 void Canvas2D::drawLine(float x1, float y1, float x2, float y2) {
     if (!backend_) return;
+    Vec2 a = applyTransform(x1, y1);
+    Vec2 b = applyTransform(x2, y2);
     if (batching_) {
-        queue_.drawLine(x1, y1, x2, y2);
+        queue_.drawLine(a.x, a.y, b.x, b.y);
         return;
     }
-    backend_->setStrokeColor(strokeColor_);
-    backend_->drawLine(x1, y1, x2, y2);
+    backend_->setStrokeColor(state_.strokeColor);
+    backend_->drawLine(a.x, a.y, b.x, b.y);
 }
 
 void Canvas2D::fillCircle(float x, float y, float radius, int segments) {
     if (!backend_ || segments < 3) return;
+    std::vector<Vec2> circle;
+    circle.reserve(segments + 1);
+    for (int i = 0; i < segments; ++i) {
+        float angle = (float)i / (float)segments * 2.0f * 3.14159265f;
+        circle.push_back(Vec2(x + radius * std::cos(angle),
+                              y + radius * std::sin(angle)));
+    }
+    applyTransform(circle);
     if (batching_) {
-        queue_.fillCircle(x, y, radius, segments);
+        queue_.fillPath(circle, true);
         return;
     }
-    backend_->setFillColor(fillColor_);
-    backend_->fillCircle(x, y, radius, segments);
+    backend_->setFillColor(state_.fillColor);
+    backend_->fillPath(circle, true, state_.fillColor);
 }
 
 void Canvas2D::beginPath() {
@@ -129,31 +197,43 @@ void Canvas2D::closePath() {
 
 void Canvas2D::fill() {
     if (!backend_ || path_.size() < 3) return;
+    std::vector<Vec2> transformed = path_;
+    applyTransform(transformed);
     if (batching_) {
-        queue_.fillPath(path_, pathClosed_);
+        queue_.fillPath(transformed, pathClosed_);
         return;
     }
-    backend_->fillPath(path_, pathClosed_, fillColor_);
+    backend_->fillPath(transformed, pathClosed_, state_.fillColor);
 }
 
 void Canvas2D::stroke() {
     if (!backend_ || path_.size() < 2) return;
+    std::vector<Vec2> transformed = path_;
+    applyTransform(transformed);
     if (batching_) {
-        queue_.strokePath(path_, pathClosed_);
+        queue_.strokePath(transformed, pathClosed_);
         return;
     }
-    backend_->strokePath(path_, pathClosed_, strokeColor_, lineWidth_);
+    backend_->setStrokeColor(state_.strokeColor);
+    backend_->strokePath(transformed, pathClosed_, state_.strokeColor, state_.lineWidth);
 }
 
 void Canvas2D::drawMaterial(float x, float y, const Material& material) {
     if (!backend_) return;
     void* handle = backend_->uploadMaterial(material);
     if (!handle) return;
+
+    float tx, ty, angle, sx, sy;
+    state_.transform.decompose(&tx, &ty, &angle, &sx, &sy);
+    Vec2 p = applyTransform(x, y);
+    float centerX = tx - p.x;
+    float centerY = ty - p.y;
+
     if (batching_) {
-        queue_.drawMaterial(x, y, handle);
+        queue_.drawMaterial(p.x, p.y, handle, angle, centerX, centerY, sx, sy);
         return;
     }
-    backend_->drawMaterial(x, y, handle);
+    backend_->drawMaterial(p.x, p.y, handle, angle, centerX, centerY, sx, sy);
 }
 
 void Canvas2D::drawTexture(float x, float y, RenderTexture* texture) {
@@ -161,9 +241,16 @@ void Canvas2D::drawTexture(float x, float y, RenderTexture* texture) {
 }
 
 void Canvas2D::drawTexture(float x, float y, RenderTexture* texture, BlendMode mode) {
-    if (!backend_) return;
+    if (!backend_ || !texture) return;
     flush();
-    backend_->drawTexture(x, y, texture, mode);
+
+    float tx, ty, angle, sx, sy;
+    state_.transform.decompose(&tx, &ty, &angle, &sx, &sy);
+    Vec2 p = applyTransform(x, y);
+    float centerX = tx - p.x;
+    float centerY = ty - p.y;
+
+    backend_->drawTexture(p.x, p.y, texture, mode, angle, centerX, centerY, sx, sy);
 }
 
 void Canvas2D::setRenderTarget(RenderTexture* target) {
@@ -183,7 +270,18 @@ void Canvas2D::clear(const Color& c) {
 void Canvas2D::setClipRect(float x, float y, float w, float h) {
     if (!backend_) return;
     flush();
-    backend_->setClipRect(x, y, w, h);
+
+    Vec2 p0 = applyTransform(x, y);
+    Vec2 p1 = applyTransform(x + w, y);
+    Vec2 p2 = applyTransform(x + w, y + h);
+    Vec2 p3 = applyTransform(x, y + h);
+
+    float minX = std::min(std::min(p0.x, p1.x), std::min(p2.x, p3.x));
+    float minY = std::min(std::min(p0.y, p1.y), std::min(p2.y, p3.y));
+    float maxX = std::max(std::max(p0.x, p1.x), std::max(p2.x, p3.x));
+    float maxY = std::max(std::max(p0.y, p1.y), std::max(p2.y, p3.y));
+
+    backend_->setClipRect(minX, minY, maxX - minX, maxY - minY);
 }
 
 void Canvas2D::resetClipRect() {

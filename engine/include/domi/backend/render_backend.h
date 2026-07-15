@@ -80,8 +80,12 @@ public:
     // -----------------------------------------------------------------
 
     // Draw a previously rendered target texture at (x, y) at its native size.
+    // Rotation is in radians around (centerX, centerY) relative to (x, y).
+    // Scale factors are applied to the texture size.
     virtual void drawTexture(float x, float y, RenderTexture* texture,
-                             BlendMode mode) = 0;
+                             BlendMode mode, float angle = 0.0f,
+                             float centerX = 0.0f, float centerY = 0.0f,
+                             float scaleX = 1.0f, float scaleY = 1.0f) = 0;
 
     // -----------------------------------------------------------------
     // Generated materials
@@ -93,7 +97,12 @@ public:
     virtual void* uploadMaterial(const Material& material) = 0;
 
     // Draw a previously uploaded material at (x, y) using its cached handle.
-    virtual void drawMaterial(float x, float y, void* handle) = 0;
+    // Rotation is in radians around (centerX, centerY) relative to (x, y).
+    // Scale factors are applied to the material size.
+    virtual void drawMaterial(float x, float y, void* handle,
+                              float angle = 0.0f,
+                              float centerX = 0.0f, float centerY = 0.0f,
+                              float scaleX = 1.0f, float scaleY = 1.0f) = 0;
 
     // Destroy a cached material texture and remove it from the cache.
     virtual void destroyMaterial(void* handle) = 0;

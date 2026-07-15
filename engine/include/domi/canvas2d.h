@@ -34,9 +34,22 @@ public:
     void setStrokeColor(const Color& c);
     void setLineWidth(float w);
 
-    const Color& getFillColor() const { return fillColor_; }
-    const Color& getStrokeColor() const { return strokeColor_; }
-    float getLineWidth() const { return lineWidth_; }
+    const Color& getFillColor() const { return state_.fillColor; }
+    const Color& getStrokeColor() const { return state_.strokeColor; }
+    float getLineWidth() const { return state_.lineWidth; }
+
+    // State stack (fill/stroke/lineWidth/transform).
+    void save();
+    void restore();
+
+    // 2D transform (matches HTML canvas semantics).
+    void translate(float x, float y);
+    void rotate(float radians);
+    void scale(float x, float y);
+    void transform(float a, float b, float c, float d, float e, float f);
+    void setTransform(float a, float b, float c, float d, float e, float f);
+    void resetTransform();
+    const Affine2D& getTransform() const { return state_.transform; }
 
     // Queue / immediate-mode switch. Batching is enabled by default so that
     // wasm-driven scripts can submit many draw calls with one native flush.
@@ -98,6 +111,15 @@ public:
                     const Color& color);
 
 private:
+    struct State {
+        Color fillColor;
+        Color strokeColor;
+        float lineWidth;
+        Affine2D transform;
+        State()
+            : fillColor(1, 1, 1, 1), strokeColor(0, 0, 0, 1), lineWidth(1.0f) {}
+    };
+
     IRenderBackend* backend_;
     RenderTexture* currentTarget_;
     int width_;
@@ -110,12 +132,16 @@ private:
 
     RenderMode renderMode_;
     bool batching_;
-    Color fillColor_;
-    Color strokeColor_;
-    float lineWidth_;
+    State state_;
+    std::vector<State> stateStack_;
     std::vector<Vec2> path_;
     bool pathClosed_;
     RenderQueue queue_;
+
+    Vec2 applyTransform(float x, float y) const {
+        return state_.transform * Vec2(x, y);
+    }
+    void applyTransform(std::vector<Vec2>& points) const;
 };
 
 } // namespace domi

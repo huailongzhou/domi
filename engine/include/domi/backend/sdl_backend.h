@@ -67,10 +67,15 @@ public:
                     const Color& color, float lineWidth) override;
 
     void drawTexture(float x, float y, RenderTexture* texture,
-                     BlendMode mode) override;
+                     BlendMode mode, float angle = 0.0f,
+                     float centerX = 0.0f, float centerY = 0.0f,
+                     float scaleX = 1.0f, float scaleY = 1.0f) override;
 
     void* uploadMaterial(const Material& material) override;
-    void drawMaterial(float x, float y, void* handle) override;
+    void drawMaterial(float x, float y, void* handle,
+                      float angle = 0.0f,
+                      float centerX = 0.0f, float centerY = 0.0f,
+                      float scaleX = 1.0f, float scaleY = 1.0f) override;
     void destroyMaterial(void* handle) override;
 
     void* createRenderTarget(int width, int height,

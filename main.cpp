@@ -114,12 +114,19 @@ public:
         list.add(RenderLayer::Surface, 562.0f, [&, canvas]() {
             Vec2 shadowDir = cachedLightDir_ * -1.0f;
             if (shadowDir.y > 0.0f) {
-                // Tree shadow base is at y + 40 (80px tall, centered).
-                SceneFunction::drawShadow(canvas, 180,  320, 32.0f, 10.0f, 40.0f, shadowDir);
-                SceneFunction::drawShadow(canvas, 1100, 300, 32.0f, 10.0f, 40.0f, shadowDir);
-                SceneFunction::drawShadow(canvas, 980,  480, 32.0f, 10.0f, 40.0f, shadowDir);
-                SceneFunction::drawShadow(canvas, 220,  560, 32.0f, 10.0f, 40.0f, shadowDir);
-                SceneFunction::drawShadow(canvas, 1150, 620, 32.0f, 10.0f, 40.0f, shadowDir);
+                // Tree shadows scale with the tree. The shadow base is fixed at
+                // the tree's bottom (y + 40) while the shadow size shrinks with distance.
+                struct TreePos { float x, y; };
+                TreePos trees[] = {
+                    { 180, 320 }, { 1100, 300 }, { 980, 480 },
+                    { 220, 560 }, { 1150, 620 }
+                };
+                for (const auto& t : trees) {
+                    float s = perspectiveScale(t.y);
+                    SceneFunction::drawShadow(canvas, t.x, t.y + 40.0f,
+                                              32.0f * s, 10.0f * s, 0.0f,
+                                              shadowDir);
+                }
                 // House shadow base is at y + 45 (90px tall, centered).
                 SceneFunction::drawShadow(canvas, 560,  360, 48.0f, 16.0f, 45.0f, shadowDir);
                 // Cube shadow base is at y + 30 (60px size, centered).
@@ -259,18 +266,41 @@ private:
         });
     }
 
+    float perspectiveScale(float y) const {
+        // Objects near the horizon (y=240) are far away and smaller;
+        // objects near the bottom (y=720) are close and full size.
+        const float minScale = 0.35f;
+        const float maxScale = 1.0f;
+        float t = (y - kHorizonY) / (720.0f - kHorizonY);
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+        return minScale + t * (maxScale - minScale);
+    }
+
     void drawTreeTrunk(Canvas2D* canvas, float x, float y, size_t index) {
         if (!canvas || index >= treeTrunks_.size()) return;
         const Material& m = treeTrunks_[index];
         if (m.width == 0) return;
-        canvas->drawMaterial(x - m.width * 0.5f, y - m.height * 0.5f, m);
+        float s = perspectiveScale(y);
+        float bottomY = y + 40.0f; // tree center y + half original height
+        canvas->save();
+        canvas->translate(x, bottomY);
+        canvas->scale(s, s);
+        canvas->drawMaterial(-m.width * 0.5f, -m.height, m);
+        canvas->restore();
     }
 
     void drawTreeFoliage(Canvas2D* canvas, float x, float y, size_t index) {
         if (!canvas || index >= treeFoliages_.size()) return;
         const Material& m = treeFoliages_[index];
         if (m.width == 0) return;
-        canvas->drawMaterial(x - m.width * 0.5f, y - m.height * 0.5f, m);
+        float s = perspectiveScale(y);
+        float bottomY = y + 40.0f; // tree center y + half original height
+        canvas->save();
+        canvas->translate(x, bottomY);
+        canvas->scale(s, s);
+        canvas->drawMaterial(-m.width * 0.5f, -m.height, m);
+        canvas->restore();
     }
 
     void drawCloud(Canvas2D* canvas, float x, float y, size_t index) {

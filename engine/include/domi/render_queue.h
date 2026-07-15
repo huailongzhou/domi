@@ -37,7 +37,10 @@ public:
 
     // Enqueue a material draw using a backend-cached texture handle.
     // The handle must have been obtained from IRenderBackend::uploadMaterial().
-    void drawMaterial(float x, float y, void* handle);
+    // Rotation is in radians around (centerX, centerY) relative to (x, y).
+    void drawMaterial(float x, float y, void* handle,
+                      float angle, float centerX, float centerY,
+                      float scaleX, float scaleY);
 
     // Execute all queued commands against the backend and clear the queue.
     void flush(IRenderBackend* backend);

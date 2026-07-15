@@ -82,10 +82,19 @@ void RenderQueue::strokePath(const std::vector<Vec2>& points, bool closed) {
     pushPathCommand(RenderCommand::StrokePath, points, closed);
 }
 
-void RenderQueue::drawMaterial(float x, float y, void* handle) {
+void RenderQueue::drawMaterial(float x, float y, void* handle,
+                               float angle, float centerX, float centerY,
+                               float scaleX, float scaleY) {
     RenderCommand cmd;
     cmd.type = RenderCommand::DrawMaterial;
-    cmd.params.material = { x, y, handle };
+    cmd.params.material.x = x;
+    cmd.params.material.y = y;
+    cmd.params.material.angle = angle;
+    cmd.params.material.centerX = centerX;
+    cmd.params.material.centerY = centerY;
+    cmd.params.material.scaleX = scaleX;
+    cmd.params.material.scaleY = scaleY;
+    cmd.params.material.handle = handle;
     commands_.push_back(cmd);
 }
 
@@ -171,7 +180,12 @@ void RenderQueue::flush(IRenderBackend* backend) {
                 if (cmd.params.material.handle) {
                     backend->drawMaterial(cmd.params.material.x,
                                           cmd.params.material.y,
-                                          cmd.params.material.handle);
+                                          cmd.params.material.handle,
+                                          cmd.params.material.angle,
+                                          cmd.params.material.centerX,
+                                          cmd.params.material.centerY,
+                                          cmd.params.material.scaleX,
+                                          cmd.params.material.scaleY);
                 }
                 break;
         }

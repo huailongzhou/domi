@@ -599,7 +599,9 @@ void SDLBackend::strokePath(const std::vector<Vec2>& points, bool closed,
 }
 
 void SDLBackend::drawTexture(float x, float y, RenderTexture* texture,
-                             BlendMode mode) {
+                             BlendMode mode, float angle,
+                             float centerX, float centerY,
+                             float scaleX, float scaleY) {
     if (!renderer_ || !texture || !texture->valid()) return;
 
     SDL_Texture* native = static_cast<SDL_Texture*>(texture->getNative());
@@ -610,8 +612,12 @@ void SDLBackend::drawTexture(float x, float y, RenderTexture* texture,
         SDL_SetTextureBlendMode(native, newMode);
     }
 
-    SDL_FRect dst = { x, y, (float)texture->width(), (float)texture->height() };
-    SDL_RenderTexture(renderer_, native, NULL, &dst);
+    float w = (float)texture->width() * scaleX;
+    float h = (float)texture->height() * scaleY;
+    SDL_FRect dst = { x, y, w, h };
+    SDL_FPoint center = { centerX, centerY };
+    SDL_RenderTextureRotated(renderer_, native, NULL, &dst, angle, &center,
+                             SDL_FLIP_NONE);
 
     if (oldMode != newMode) {
         SDL_SetTextureBlendMode(native, oldMode);
@@ -635,15 +641,21 @@ void* SDLBackend::uploadMaterial(const Material& material) {
     return tex;
 }
 
-void SDLBackend::drawMaterial(float x, float y, void* handle) {
+void SDLBackend::drawMaterial(float x, float y, void* handle,
+                              float angle, float centerX, float centerY,
+                              float scaleX, float scaleY) {
     if (!renderer_ || !handle) return;
 
     SDL_Texture* tex = static_cast<SDL_Texture*>(handle);
     float w, h;
     if (!SDL_GetTextureSize(tex, &w, &h)) return;
 
+    w *= scaleX;
+    h *= scaleY;
     SDL_FRect dst = { x, y, w, h };
-    SDL_RenderTexture(renderer_, tex, NULL, &dst);
+    SDL_FPoint center = { centerX, centerY };
+    SDL_RenderTextureRotated(renderer_, tex, NULL, &dst, angle, &center,
+                             SDL_FLIP_NONE);
 }
 
 void SDLBackend::destroyMaterial(void* handle) {

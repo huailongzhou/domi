@@ -84,6 +84,50 @@ struct Rect {
     bool contains(float px, float py) const { return px >= x && px < x + w && py >= y && py < y + h; }
 };
 
+// 2D affine transform used by Canvas2D.
+// Matrix layout matches the HTML canvas transform(a,b,c,d,e,f):
+//   x' = m[0]*x + m[2]*y + m[4]
+//   y' = m[1]*x + m[3]*y + m[5]
+struct Affine2D {
+    float m[6];
+    Affine2D() { identity(); }
+    explicit Affine2D(float a, float b, float c, float d, float e, float f) {
+        m[0] = a; m[1] = b; m[2] = c; m[3] = d; m[4] = e; m[5] = f;
+    }
+    void identity() { m[0] = 1; m[1] = 0; m[2] = 0; m[3] = 1; m[4] = 0; m[5] = 0; }
+    static Affine2D translate(float x, float y) { return Affine2D(1, 0, 0, 1, x, y); }
+    static Affine2D rotate(float radians) {
+        float c = std::cos(radians);
+        float s = std::sin(radians);
+        return Affine2D(c, s, -s, c, 0, 0);
+    }
+    static Affine2D scale(float x, float y) { return Affine2D(x, 0, 0, y, 0, 0); }
+    Affine2D operator*(const Affine2D& o) const {
+        Affine2D r;
+        r.m[0] = m[0]*o.m[0] + m[2]*o.m[1];
+        r.m[1] = m[1]*o.m[0] + m[3]*o.m[1];
+        r.m[2] = m[0]*o.m[2] + m[2]*o.m[3];
+        r.m[3] = m[1]*o.m[2] + m[3]*o.m[3];
+        r.m[4] = m[0]*o.m[4] + m[2]*o.m[5] + m[4];
+        r.m[5] = m[1]*o.m[4] + m[3]*o.m[5] + m[5];
+        return r;
+    }
+    Vec2 operator*(const Vec2& v) const {
+        return Vec2(m[0]*v.x + m[2]*v.y + m[4],
+                    m[1]*v.x + m[3]*v.y + m[5]);
+    }
+    // Approximate decomposition into translation, rotation and scale.
+    // Returns rotation in radians. Ignores shear.
+    void decompose(float* tx, float* ty, float* rotation,
+                   float* sx, float* sy) const {
+        if (tx) *tx = m[4];
+        if (ty) *ty = m[5];
+        if (sx) *sx = std::sqrt(m[0]*m[0] + m[1]*m[1]);
+        if (sy) *sy = std::sqrt(m[2]*m[2] + m[3]*m[3]);
+        if (rotation) *rotation = std::atan2(m[1], m[0]);
+    }
+};
+
 struct AABB {
     Vec3 min, max;
     AABB() {}
