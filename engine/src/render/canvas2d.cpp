@@ -218,6 +218,188 @@ void Canvas2D::stroke() {
     backend_->strokePath(transformed, pathClosed_, state_.strokeColor, state_.lineWidth);
 }
 
+namespace {
+
+const float PI = 3.14159265f;
+
+float normalizeAngle(float a) {
+    while (a < -PI) a += 2.0f * PI;
+    while (a >  PI) a -= 2.0f * PI;
+    return a;
+}
+
+} // anonymous namespace
+
+void Canvas2D::arc(float x, float y, float radius,
+                   float startAngle, float endAngle,
+                   bool counterClockwise) {
+    if (radius < 0.0f) return;
+    float delta = endAngle - startAngle;
+    if (!counterClockwise && delta < 0.0f) delta += 2.0f * PI;
+    if (counterClockwise && delta > 0.0f) delta -= 2.0f * PI;
+    if (!counterClockwise && delta > 2.0f * PI) delta = 2.0f * PI;
+    if (counterClockwise && delta < -2.0f * PI) delta = -2.0f * PI;
+
+    float sx = x + radius * std::cos(startAngle);
+    float sy = y + radius * std::sin(startAngle);
+    if (path_.empty()) {
+        path_.push_back(Vec2(sx, sy));
+    } else {
+        // Standard canvas: line from current point to arc start.
+        path_.push_back(Vec2(sx, sy));
+    }
+
+    int segments = std::max(8, static_cast<int>(std::abs(delta) * 30.0f));
+    for (int i = 1; i <= segments; ++i) {
+        float t = (float)i / (float)segments;
+        float angle = startAngle + delta * t;
+        path_.push_back(Vec2(x + radius * std::cos(angle),
+                             y + radius * std::sin(angle)));
+    }
+}
+
+void Canvas2D::arcTo(float x1, float y1, float x2, float y2, float radius) {
+    if (radius < 0.0f || path_.empty()) return;
+
+    Vec2 p0 = path_.back();
+    Vec2 p1(x1, y1);
+    Vec2 p2(x2, y2);
+
+    Vec2 v1 = p0 - p1;
+    Vec2 v2 = p2 - p1;
+    float len1 = v1.length();
+    float len2 = v2.length();
+    if (len1 < 0.0001f || len2 < 0.0001f) {
+        path_.push_back(p1);
+        return;
+    }
+
+    Vec2 u1 = v1 * (1.0f / len1);
+    Vec2 u2 = v2 * (1.0f / len2);
+    float cross = u1.x * u2.y - u1.y * u2.x;
+    float dot = u1.x * u2.x + u1.y * u2.y;
+    float angle = std::atan2(std::abs(cross), dot);
+    if (angle < 0.001f || std::abs(angle - PI) < 0.001f) {
+        path_.push_back(p1);
+        return;
+    }
+
+    float d = radius / std::tan(angle * 0.5f);
+    if (d > len1 || d > len2) {
+        path_.push_back(p1);
+        return;
+    }
+
+    Vec2 t1 = p1 + u1 * d;
+
+    // Center at p1 + (u1 + u2) * radius / sin(angle).
+    Vec2 bisector = u1 + u2;
+    if (bisector.length() < 0.0001f) {
+        path_.push_back(p1);
+        return;
+    }
+    // Center lies on the internal angle bisector at distance r / sin(angle)
+    // from the corner p1 (equivalent to r/sin(angle/2) along the unit bisector).
+    Vec2 center = p1 + bisector * (radius / std::sin(angle));
+
+    // The path turns according to the sign of cross; the arc around the center
+    // turns the opposite way because the center lies on the inside of the turn.
+    bool arcCCW = cross < 0.0f;
+    float startA = std::atan2(t1.y - center.y, t1.x - center.x);
+
+    // Line from current point p0 to tangent point t1, then arc to t2.
+    path_.push_back(t1);
+
+    // The arc spans the same angle as the path turn, but in the opposite
+    // rotational direction because it curves around the inside center.
+    float delta = arcCCW ? angle : -angle;
+    int segments = std::max(8, static_cast<int>(std::abs(delta) * 30.0f));
+    for (int i = 1; i <= segments; ++i) {
+        float t = (float)i / (float)segments;
+        float a = startA + delta * t;
+        path_.push_back(Vec2(center.x + radius * std::cos(a),
+                             center.y + radius * std::sin(a)));
+    }
+}
+
+void Canvas2D::bezierCurveTo(float cp1x, float cp1y,
+                             float cp2x, float cp2y,
+                             float x, float y) {
+    if (path_.empty()) {
+        path_.push_back(Vec2(cp1x, cp1y));
+    }
+    Vec2 p0 = path_.back();
+    Vec2 p1(cp1x, cp1y);
+    Vec2 p2(cp2x, cp2y);
+    Vec2 p3(x, y);
+
+    const int segments = 24;
+    for (int i = 1; i <= segments; ++i) {
+        float t = (float)i / (float)segments;
+        float mt = 1.0f - t;
+        float mt2 = mt * mt;
+        float t2 = t * t;
+        float px = mt2 * mt * p0.x + 3.0f * mt2 * t * p1.x +
+                   3.0f * mt * t2 * p2.x + t2 * t * p3.x;
+        float py = mt2 * mt * p0.y + 3.0f * mt2 * t * p1.y +
+                   3.0f * mt * t2 * p2.y + t2 * t * p3.y;
+        path_.push_back(Vec2(px, py));
+    }
+}
+
+void Canvas2D::quadraticCurveTo(float cpx, float cpy, float x, float y) {
+    if (path_.empty()) {
+        path_.push_back(Vec2(cpx, cpy));
+    }
+    Vec2 p0 = path_.back();
+    Vec2 p1(cpx, cpy);
+    Vec2 p2(x, y);
+
+    const int segments = 24;
+    for (int i = 1; i <= segments; ++i) {
+        float t = (float)i / (float)segments;
+        float mt = 1.0f - t;
+        float px = mt * mt * p0.x + 2.0f * mt * t * p1.x + t * t * p2.x;
+        float py = mt * mt * p0.y + 2.0f * mt * t * p1.y + t * t * p2.y;
+        path_.push_back(Vec2(px, py));
+    }
+}
+
+void Canvas2D::ellipse(float x, float y, float radiusX, float radiusY,
+                       float rotation, float startAngle, float endAngle,
+                       bool counterClockwise) {
+    if (radiusX < 0.0f || radiusY < 0.0f) return;
+    float delta = endAngle - startAngle;
+    if (!counterClockwise && delta < 0.0f) delta += 2.0f * PI;
+    if (counterClockwise && delta > 0.0f) delta -= 2.0f * PI;
+    if (!counterClockwise && delta > 2.0f * PI) delta = 2.0f * PI;
+    if (counterClockwise && delta < -2.0f * PI) delta = -2.0f * PI;
+
+    float cosR = std::cos(rotation);
+    float sinR = std::sin(rotation);
+
+    auto point = [&](float angle) -> Vec2 {
+        float lx = radiusX * std::cos(angle);
+        float ly = radiusY * std::sin(angle);
+        return Vec2(x + lx * cosR - ly * sinR,
+                    y + lx * sinR + ly * cosR);
+    };
+
+    Vec2 startP = point(startAngle);
+    if (path_.empty()) {
+        path_.push_back(startP);
+    } else {
+        path_.push_back(startP);
+    }
+
+    int segments = std::max(8, static_cast<int>(std::abs(delta) * 30.0f));
+    for (int i = 1; i <= segments; ++i) {
+        float t = (float)i / (float)segments;
+        float angle = startAngle + delta * t;
+        path_.push_back(point(angle));
+    }
+}
+
 void Canvas2D::drawMaterial(float x, float y, const Material& material) {
     if (!backend_) return;
     void* handle = backend_->uploadMaterial(material);

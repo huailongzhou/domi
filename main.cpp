@@ -850,14 +850,27 @@ private:
         return mx >= bx && mx <= bx + buttonW_ && my >= by && my <= by + buttonH_;
     }
 
+    void drawRoundedRect(Canvas2D* canvas, float x, float y,
+                         float w, float h, float radius) const {
+        float r = radius;
+        canvas->beginPath();
+        canvas->moveTo(x + r, y);
+        canvas->arcTo(x + w, y,     x + w, y + h, r);
+        canvas->arcTo(x + w, y + h, x,     y + h, r);
+        canvas->arcTo(x,     y + h, x,     y,     r);
+        canvas->arcTo(x,     y,     x + w, y,     r);
+        canvas->closePath();
+        canvas->fill();
+    }
+
     void drawButton(Canvas2D* canvas, float by, const Color& base, const Color& border) const {
         float bx = (1280.0f - buttonW_) * 0.5f;
         canvas->setFillColor(border);
-        canvas->fillRect(bx - 4, by - 4, buttonW_ + 8, buttonH_ + 8);
+        drawRoundedRect(canvas, bx - 4, by - 4, buttonW_ + 8, buttonH_ + 8, 12.0f);
         canvas->setFillColor(base);
-        canvas->fillRect(bx, by, buttonW_, buttonH_);
+        drawRoundedRect(canvas, bx, by, buttonW_, buttonH_, 10.0f);
         canvas->setFillColor(Color(1.0f, 1.0f, 1.0f));
-        canvas->fillRect(bx + 10, by + 10, buttonW_ - 20, buttonH_ - 20);
+        drawRoundedRect(canvas, bx + 10, by + 10, buttonW_ - 20, buttonH_ - 20, 6.0f);
     }
 };
 

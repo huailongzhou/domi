@@ -74,6 +74,19 @@ public:
     void fill();
     void stroke();
 
+    // Standard canvas-style curve primitives.
+    void arc(float x, float y, float radius,
+             float startAngle, float endAngle,
+             bool counterClockwise = false);
+    void arcTo(float x1, float y1, float x2, float y2, float radius);
+    void bezierCurveTo(float cp1x, float cp1y,
+                       float cp2x, float cp2y,
+                       float x, float y);
+    void quadraticCurveTo(float cpx, float cpy, float x, float y);
+    void ellipse(float x, float y, float radiusX, float radiusY,
+                 float rotation, float startAngle, float endAngle,
+                 bool counterClockwise = false);
+
     // Draw a generated material at (x, y). Handles all PixelFormat variants.
     void drawMaterial(float x, float y, const Material& material);
 
