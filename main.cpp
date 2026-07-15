@@ -109,6 +109,24 @@ public:
             canvas->fillRect(0, 240, 1280, 480);
         });
 
+        // Lake on the right side of the grass, with a Bezier-curved shore.
+        list.add(RenderLayer::Ground, 241.0f, [&, canvas]() {
+            canvas->setFillColor(Color(0.18f, 0.48f, 0.78f, 1.0f));
+            canvas->beginPath();
+            canvas->moveTo(850.0f, 360.0f);
+            canvas->quadraticCurveTo(1050.0f, 330.0f, 1240.0f, 410.0f);
+            canvas->quadraticCurveTo(1300.0f, 540.0f, 1220.0f, 670.0f);
+            canvas->quadraticCurveTo(1020.0f, 710.0f, 860.0f, 640.0f);
+            canvas->quadraticCurveTo(790.0f, 510.0f, 850.0f, 360.0f);
+            canvas->closePath();
+            canvas->fill();
+
+            // Lighter shoreline highlight.
+            canvas->setStrokeColor(Color(0.45f, 0.72f, 0.95f, 1.0f));
+            canvas->setLineWidth(3.0f);
+            canvas->stroke();
+        });
+
         // Ground-object shadows are drawn after the road surface but before
         // objects, so they are visible on both grass and asphalt. Cloud shadows
         // stay in the ShadowPass shadow mask.
