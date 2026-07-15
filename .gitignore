@@ -31,6 +31,11 @@ compile_commands.json
 /wamr-mingw-include/
 /emsdk/
 /wasm-micro-runtime-WAMR-2.4.3/
+/freetype/
+/freetype-build/
+/freetype-mingw/
+/freetype-mingw-build/
+/freetype-2.13.2/
 
 # Downloaded archives
 *.tar.gz

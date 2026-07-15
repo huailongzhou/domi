@@ -1,6 +1,7 @@
 #include "domi/canvas2d.h"
 #include "domi/backend/render_backend.h"
 #include "domi/render_texture.h"
+#include "domi/ui/font.h"
 #include <cmath>
 #include <algorithm>
 
@@ -416,6 +417,11 @@ void Canvas2D::drawMaterial(float x, float y, const Material& material) {
         return;
     }
     backend_->drawMaterial(p.x, p.y, handle, angle, centerX, centerY, sx, sy);
+}
+
+void Canvas2D::drawText(float x, float y, const char* text, Font* font, const Color& color) {
+    if (!font) return;
+    font->drawText(this, x, y, text, color);
 }
 
 void Canvas2D::drawTexture(float x, float y, RenderTexture* texture) {

@@ -4,6 +4,7 @@
 #include "domi/render_command_buffer.h"
 #include "domi/render_pass.h"
 #include "domi/scene_manager.h"
+#include "domi/scene.h"
 #include "domi/ecs.h"
 #include "domi/component.h"
 #include <cstdio>
@@ -99,12 +100,14 @@ bool Renderer::createBuffers(int w, int h) {
     return true;
 }
 
-void Renderer::render(World* world, SceneManager* sceneManager) {
+void Renderer::render(World* world, SceneManager* sceneManager, float fps) {
     if (!backend_ || !canvas_ || !cmd_) return;
 
     // Ensure we start on the default target with a clean state.
     canvas_->setRenderTarget(NULL);
     backend_->clear(Color(0.0f, 0.0f, 0.0f, 1.0f));
+
+    Scene* scene = sceneManager ? sceneManager->current() : NULL;
 
     RenderContext ctx;
     ctx.colorBuffer = &colorBuffer_;
@@ -114,6 +117,9 @@ void Renderer::render(World* world, SceneManager* sceneManager) {
     ctx.world = world;
     ctx.camera = findActiveCamera(world);
     ctx.sun = findDirectionalLight(world);
+    ctx.uiRoot = scene ? scene->getUIRoot() : NULL;
+    ctx.uiContext = scene ? scene->getUIContext() : NULL;
+    ctx.fps = fps;
     ctx.width = width_;
     ctx.height = height_;
 

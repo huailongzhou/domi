@@ -24,7 +24,7 @@ public:
     bool init();
     void shutdown();
 
-    void render(World* world, SceneManager* sceneManager = NULL);
+    void render(World* world, SceneManager* sceneManager = NULL, float fps = 0.0f);
 
     Canvas2D* getCanvas2D() { return canvas_; }
 

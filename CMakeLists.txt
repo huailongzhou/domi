@@ -14,12 +14,23 @@ endif()
 # Paths to installed dependencies
 set(SDL3_ROOT "${CMAKE_SOURCE_DIR}/sdl3" CACHE PATH "SDL3 install prefix")
 set(WAMR_ROOT "${CMAKE_SOURCE_DIR}/wamr" CACHE PATH "WAMR install prefix")
+set(FREETYPE_ROOT "${CMAKE_SOURCE_DIR}/freetype" CACHE PATH "FreeType install prefix")
+set(FREETYPE_MINGW_ROOT "${CMAKE_SOURCE_DIR}/freetype-mingw" CACHE PATH "FreeType MinGW install prefix")
 
 # Find SDL3
 find_package(SDL3 REQUIRED PATHS ${SDL3_ROOT} NO_DEFAULT_PATH)
 
 # Find WAMR
 find_package(iwasm REQUIRED PATHS ${WAMR_ROOT}/lib/cmake/iwasm NO_DEFAULT_PATH)
+
+# Pick the FreeType install prefix for the current toolchain.
+if(MINGW OR CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_C_COMPILER MATCHES "mingw")
+    set(FREETYPE_ACTIVE_ROOT ${FREETYPE_MINGW_ROOT})
+else()
+    set(FREETYPE_ACTIVE_ROOT ${FREETYPE_ROOT})
+endif()
+set(FREETYPE_INCLUDE_DIR "${FREETYPE_ACTIVE_ROOT}/include/freetype2")
+set(FREETYPE_LIBRARY "${FREETYPE_ACTIVE_ROOT}/lib/libfreetype.a")
 
 # Engine library
 add_library(domi_engine STATIC
@@ -45,6 +56,8 @@ add_library(domi_engine STATIC
     engine/src/scene/scene_function.cpp
     engine/src/backend/sdl_backend.cpp
     engine/src/audio/audio.cpp
+    engine/src/ui/ui.cpp
+    engine/src/ui/font.cpp
     tools/generators/material_generator.cpp
     tools/generators/tree_generator.cpp
     tools/generators/cloud_generator.cpp
@@ -60,11 +73,13 @@ target_include_directories(domi_engine PUBLIC
     ${CMAKE_SOURCE_DIR}/engine/include
     ${CMAKE_SOURCE_DIR}/tools/generators
     ${WAMR_ROOT}/include
+    ${FREETYPE_INCLUDE_DIR}
 )
 
 target_link_libraries(domi_engine PUBLIC
     SDL3::SDL3
     iwasm::vmlib
+    ${FREETYPE_LIBRARY}
 )
 
 # Main executable

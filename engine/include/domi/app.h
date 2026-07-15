@@ -44,6 +44,7 @@ public:
     double getDeltaTime() const { return deltaTime_; }
     double getTime() const { return totalTime_; }
     uint64_t getFrameCount() const { return frameCount_; }
+    float getFPS() const { return currentFps_; }
 
     bool isRunning() const { return running_; }
     void quit() { running_ = false; }
@@ -76,6 +77,7 @@ private:
     double fixedTime_;
     double fixedAccumulator_;
     uint64_t frameCount_;
+    float currentFps_;
 };
 
 } // namespace domi

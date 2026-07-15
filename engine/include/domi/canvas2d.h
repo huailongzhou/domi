@@ -11,6 +11,7 @@ namespace domi {
 
 class IRenderBackend;
 class RenderTexture;
+class Font;
 
 enum class RenderMode {
     PAINTER,
@@ -89,6 +90,9 @@ public:
 
     // Draw a generated material at (x, y). Handles all PixelFormat variants.
     void drawMaterial(float x, float y, const Material& material);
+
+    // Draw text using a loaded FreeType font.
+    void drawText(float x, float y, const char* text, Font* font, const Color& color);
 
     // Draw a previously rendered target texture at (x, y) at its native size.
     void drawTexture(float x, float y, RenderTexture* texture);

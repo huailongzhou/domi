@@ -8,6 +8,8 @@ namespace domi {
 class World;
 class ScriptSystem;
 class Canvas2D;
+class UIView;
+class UIContext;
 
 // A Scene is a self-contained collection of entities/components.
 // Derive from this class and override load/unload to build your level.
@@ -33,6 +35,11 @@ public:
 
     // Optional scene name for debugging.
     virtual const char* name() const { return "Scene"; }
+
+    // Optional declarative UI root/context. When both are non-null the
+    // UIPass will render this view tree on top of the composited frame.
+    virtual UIView* getUIRoot() { return nullptr; }
+    virtual UIContext* getUIContext() { return nullptr; }
 };
 
 } // namespace domi

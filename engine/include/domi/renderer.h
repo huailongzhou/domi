@@ -33,7 +33,7 @@ public:
     void shutdown();
 
     // Execute all passes for one frame and present.
-    void render(World* world, SceneManager* sceneManager);
+    void render(World* world, SceneManager* sceneManager, float fps = 0.0f);
 
     // Add a pass. Ownership is transferred to Renderer.
     void addPass(RenderPass* pass);

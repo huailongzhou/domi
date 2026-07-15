@@ -205,7 +205,7 @@ void RenderSystem::shutdown() {
     canvas_ = NULL;
 }
 
-void RenderSystem::render(World* world, SceneManager* sceneManager) {
+void RenderSystem::render(World* world, SceneManager* sceneManager, float fps) {
     if (!renderBackend_ || !windowBackend_) return;
 
     // Check whether any entity wants 3D rendering.
@@ -234,7 +234,7 @@ void RenderSystem::render(World* world, SceneManager* sceneManager) {
                     gp->setSceneManager(sceneManager);
                 }
             }
-            renderer_->render(world, sceneManager);
+            renderer_->render(world, sceneManager, fps);
         }
     }
 }

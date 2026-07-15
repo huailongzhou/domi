@@ -22,6 +22,7 @@ else
 fi
 SDL_VERSION="3.2.14"
 WAMR_VERSION="2.4.3"
+FREETYPE_VERSION="2.13.2"
 
 # Optional GitHub proxy/mirror prefix.
 PROXY="${GITHUB_PROXY:-}"
@@ -86,6 +87,79 @@ cmake --install .
 cd ..
 
 # ------------------------------------------------------------------
+# FreeType
+# ------------------------------------------------------------------
+FREETYPE_ARCHIVE="freetype-${FREETYPE_VERSION}.tar.gz"
+FREETYPE_SRC="freetype-${FREETYPE_VERSION}"
+FREETYPE_URL="https://download.savannah.gnu.org/releases/freetype/${FREETYPE_ARCHIVE}"
+
+if [ ! -d "$FREETYPE_SRC" ]; then
+    download "$FREETYPE_URL" "$FREETYPE_ARCHIVE"
+    tar xzf "$FREETYPE_ARCHIVE"
+fi
+
+# Native build
+mkdir -p freetype-build
+cd freetype-build
+cmake "../$FREETYPE_SRC" \
+    -DCMAKE_INSTALL_PREFIX="$ROOT/freetype" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DFT_DISABLE_ZLIB=ON \
+    -DFT_DISABLE_BZIP2=ON \
+    -DFT_DISABLE_PNG=ON \
+    -DFT_DISABLE_HARFBUZZ=ON \
+    -DFT_DISABLE_BROTLI=ON
+cmake --build . -j"$JOBS"
+cmake --install .
+cd ..
+
+# MinGW build
+mkdir -p freetype-mingw-build
+cd freetype-mingw-build
+cmake "../$FREETYPE_SRC" \
+    -DCMAKE_INSTALL_PREFIX="$ROOT/freetype-mingw" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DFT_DISABLE_ZLIB=ON \
+    -DFT_DISABLE_BZIP2=ON \
+    -DFT_DISABLE_PNG=ON \
+    -DFT_DISABLE_HARFBUZZ=ON \
+    -DFT_DISABLE_BROTLI=ON \
+    -DCMAKE_SYSTEM_NAME=Windows \
+    -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix \
+    -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
+    -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres
+cmake --build . -j"$JOBS"
+cmake --install .
+cd ..
+
+# ------------------------------------------------------------------
+# Default font asset
+# ------------------------------------------------------------------
+mkdir -p assets/fonts
+FONT_OUT="assets/fonts/default.ttf"
+if [ ! -f "$FONT_OUT" ]; then
+    # Prefer a freely-licensed system font, then try common Linux paths.
+    for sysfont in \
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" \
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf" \
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf" \
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
+    do
+        if [ -f "$sysfont" ]; then
+            echo "[setup] Using system font $sysfont"
+            cp "$sysfont" "$FONT_OUT"
+            break
+        fi
+    done
+fi
+if [ ! -f "$FONT_OUT" ]; then
+    echo "[setup] Warning: no default font at $FONT_OUT"
+    echo "[setup] Text rendering will not work until a TTF is placed there."
+fi
+
+# ------------------------------------------------------------------
 # Emscripten SDK (optional)
 # ------------------------------------------------------------------
 if [ "$SETUP_EMSDK" = "1" ]; then
@@ -100,6 +174,11 @@ if [ "$SETUP_EMSDK" = "1" ]; then
 fi
 
 echo "[setup] Done. Dependencies installed to:"
-echo "  SDL3: $ROOT/sdl3"
-echo "  WAMR: $ROOT/wamr"
-[ "$SETUP_EMSDK" = "1" ] && echo "  Emscripten: $ROOT/emsdk"
+echo "  SDL3:     $ROOT/sdl3"
+echo "  WAMR:     $ROOT/wamr"
+echo "  FreeType: $ROOT/freetype"
+echo "  FreeType (MinGW): $ROOT/freetype-mingw"
+echo "  Font:     $ROOT/$FONT_OUT"
+if [ "$SETUP_EMSDK" = "1" ]; then
+    echo "  Emscripten: $ROOT/emsdk"
+fi

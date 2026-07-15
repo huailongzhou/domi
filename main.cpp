@@ -10,6 +10,7 @@
 #include "domi/render_layer.h"
 #include "domi/render_list.h"
 #include "domi/scene_function.h"
+#include "domi/ui/ui.h"
 #include "tree_generator.h"
 #include "cloud_generator.h"
 #include "rock_generator.h"
@@ -776,9 +777,39 @@ private:
 
 class MenuScene : public Scene {
 public:
-    MenuScene() : button2DY_(320), button3DY_(430), buttonW_(400), buttonH_(70) {}
+    MenuScene() {
+        // SwiftUI-like declarative menu layout:
+        // a centered vertical stack of two rounded buttons.
+        menu_ = UIView::VStack(20.0f, {
+            UIView::Button("2D Game")
+                .onClick([]() {
+                    fprintf(stderr, "[MENU] Starting 2D game\n");
+                    App::instance().getSceneManager()->setNext(new Game2DScene());
+                })
+                .background(Color(0.25f, 0.65f, 0.25f))
+                .border(Color(0.15f, 0.45f, 0.15f), 4.0f)
+                .foreground(Color(1.0f, 1.0f, 1.0f))
+                .cornerRadius(10.0f)
+                .frame(400.0f, 70.0f),
+            UIView::Button("3D Game")
+                .onClick([]() {
+                    fprintf(stderr, "[MENU] Starting 3D game\n");
+                    App::instance().getSceneManager()->setNext(new Game3DScene());
+                })
+                .background(Color(0.25f, 0.45f, 0.75f))
+                .border(Color(0.15f, 0.30f, 0.55f), 4.0f)
+                .foreground(Color(1.0f, 1.0f, 1.0f))
+                .cornerRadius(10.0f)
+                .frame(400.0f, 70.0f)
+        })
+        .alignment(UIAlignment::Center)
+        .frame(1280.0f, 720.0f);
+    }
 
     const char* name() const override { return "MenuScene"; }
+
+    UIView* getUIRoot() override { return &menu_; }
+    UIContext* getUIContext() override { return &ui_; }
 
     void load(World* world, ScriptSystem* script) override {
         (void)world;
@@ -798,16 +829,9 @@ public:
         bool choose2D = input->isKeyPressed(SDL_SCANCODE_1) || input->isKeyPressed(SDL_SCANCODE_KP_1);
         bool choose3D = input->isKeyPressed(SDL_SCANCODE_2) || input->isKeyPressed(SDL_SCANCODE_KP_2);
 
-        // Also support mouse clicks on the buttons.
         if (input->isMouseButtonPressed(1)) {
-            float mx = input->getMouseX();
-            float my = input->getMouseY();
-            if (hitButton(mx, my, button2DY_)) {
-                choose2D = true;
-                fprintf(stderr, "[MENU] Clicked 2D button\n");
-            } else if (hitButton(mx, my, button3DY_)) {
-                choose3D = true;
-                fprintf(stderr, "[MENU] Clicked 3D button\n");
+            if (ui_.handleClick(input->getMouseX(), input->getMouseY(), menu_)) {
+                return;
             }
         }
 
@@ -831,9 +855,6 @@ public:
         canvas->setFillColor(Color(0.9f, 0.9f, 0.9f));
         canvas->fillRect(340, 160, 600, 80);
 
-        drawButton(canvas, button2DY_, Color(0.25f, 0.65f, 0.25f), Color(0.15f, 0.45f, 0.15f));
-        drawButton(canvas, button3DY_, Color(0.25f, 0.45f, 0.75f), Color(0.15f, 0.30f, 0.55f));
-
         // Hint bars representing "Press 1 or click for 2D, Press 2 or click for 3D"
         canvas->setFillColor(Color(0.7f, 0.7f, 0.7f));
         canvas->fillRect(440, 560, 400, 6);
@@ -842,36 +863,8 @@ public:
     }
 
 private:
-    float button2DY_, button3DY_;
-    float buttonW_, buttonH_;
-
-    bool hitButton(float mx, float my, float by) const {
-        float bx = (1280.0f - buttonW_) * 0.5f;
-        return mx >= bx && mx <= bx + buttonW_ && my >= by && my <= by + buttonH_;
-    }
-
-    void drawRoundedRect(Canvas2D* canvas, float x, float y,
-                         float w, float h, float radius) const {
-        float r = radius;
-        canvas->beginPath();
-        canvas->moveTo(x + r, y);
-        canvas->arcTo(x + w, y,     x + w, y + h, r);
-        canvas->arcTo(x + w, y + h, x,     y + h, r);
-        canvas->arcTo(x,     y + h, x,     y,     r);
-        canvas->arcTo(x,     y,     x + w, y,     r);
-        canvas->closePath();
-        canvas->fill();
-    }
-
-    void drawButton(Canvas2D* canvas, float by, const Color& base, const Color& border) const {
-        float bx = (1280.0f - buttonW_) * 0.5f;
-        canvas->setFillColor(border);
-        drawRoundedRect(canvas, bx - 4, by - 4, buttonW_ + 8, buttonH_ + 8, 12.0f);
-        canvas->setFillColor(base);
-        drawRoundedRect(canvas, bx, by, buttonW_, buttonH_, 10.0f);
-        canvas->setFillColor(Color(1.0f, 1.0f, 1.0f));
-        drawRoundedRect(canvas, bx + 10, by + 10, buttonW_ - 20, buttonH_ - 20, 6.0f);
-    }
+    UIContext ui_;
+    UIView menu_;
 };
 
 void SecondScene::load(World* world, ScriptSystem* script) {
