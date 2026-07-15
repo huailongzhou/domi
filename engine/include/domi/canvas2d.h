@@ -5,6 +5,8 @@
 #include "domi/render_queue.h"
 #include "domi/math.h"
 #include "domi/types.h"
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace domi {
@@ -91,6 +93,17 @@ public:
     // Draw a generated material at (x, y). Handles all PixelFormat variants.
     void drawMaterial(float x, float y, const Material& material);
 
+    // Key-based material cache. Allows callers to avoid expensive CPU work
+    // (e.g. FreeType rasterization) when the same material has already been
+    // uploaded. The key is an opaque caller-provided string.
+    //
+    //   checkMaterial(key) -> returns backend handle if cached, else NULL.
+    //   uploadMaterial(key, material) -> uploads and registers under key.
+    //   drawMaterial(key, x, y) -> draws a previously registered material.
+    void* checkMaterial(const char* key) const;
+    void* uploadMaterial(const char* key, const Material& material);
+    void drawMaterial(const char* key, float x, float y);
+
     // Draw text using a loaded FreeType font.
     void drawText(float x, float y, const char* text, Font* font, const Color& color);
 
@@ -154,6 +167,10 @@ private:
     std::vector<Vec2> path_;
     bool pathClosed_;
     RenderQueue queue_;
+
+    // Caller-provided key -> backend material handle cache.
+    // This lets text and other generators skip re-rasterization on repeats.
+    std::unordered_map<std::string, void*> materialKeyCache_;
 
     Vec2 applyTransform(float x, float y) const {
         return state_.transform * Vec2(x, y);

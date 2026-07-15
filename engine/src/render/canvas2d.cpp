@@ -424,6 +424,39 @@ void Canvas2D::drawText(float x, float y, const char* text, Font* font, const Co
     font->drawText(this, x, y, text, color);
 }
 
+void* Canvas2D::checkMaterial(const char* key) const {
+    if (!key) return NULL;
+    auto it = materialKeyCache_.find(key);
+    return it != materialKeyCache_.end() ? it->second : NULL;
+}
+
+void* Canvas2D::uploadMaterial(const char* key, const Material& material) {
+    if (!backend_ || !key) return NULL;
+    void* handle = backend_->uploadMaterial(material);
+    if (handle) {
+        materialKeyCache_[key] = handle;
+    }
+    return handle;
+}
+
+void Canvas2D::drawMaterial(const char* key, float x, float y) {
+    if (!backend_ || !key) return;
+    void* handle = checkMaterial(key);
+    if (!handle) return;
+
+    float tx, ty, angle, sx, sy;
+    state_.transform.decompose(&tx, &ty, &angle, &sx, &sy);
+    Vec2 p = applyTransform(x, y);
+    float centerX = tx - p.x;
+    float centerY = ty - p.y;
+
+    if (batching_) {
+        queue_.drawMaterial(p.x, p.y, handle, angle, centerX, centerY, sx, sy);
+        return;
+    }
+    backend_->drawMaterial(p.x, p.y, handle, angle, centerX, centerY, sx, sy);
+}
+
 void Canvas2D::drawTexture(float x, float y, RenderTexture* texture) {
     drawTexture(x, y, texture, BlendMode::Blend);
 }

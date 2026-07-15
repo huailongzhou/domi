@@ -1,17 +1,12 @@
 #include "domi/ui/font.h"
 #include "domi/canvas2d.h"
+#include "domi/material.h"
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <cstring>
 #include <vector>
 
 namespace domi {
-
-namespace {
-
-const size_t MAX_TEXT_CACHE = 128;
-
-} // anonymous namespace
 
 Font::Font()
     : library_(nullptr), face_(nullptr), pixelSize_(16) {
@@ -40,10 +35,6 @@ bool Font::load(const char* path, int pixelSize) {
         FT_Done_Face(face_);
         face_ = nullptr;
     }
-
-    // Changing the pixel size invalidates any cached rasterizations.
-    cache_.clear();
-    lru_.clear();
 
     FT_Face face = nullptr;
     if (FT_New_Face(library_, path, 0, &face) != 0) {
@@ -85,43 +76,6 @@ std::string Font::makeKey(const char* text, const Color& color) {
     return key;
 }
 
-const Font::CachedText* Font::findCache(const char* text, const Color& color) const {
-    std::string key = makeKey(text, color);
-    auto it = cache_.find(key);
-    if (it == cache_.end()) return nullptr;
-    // Move to front (LRU).
-    lru_.splice(lru_.begin(), lru_, it->second.second);
-    return &it->second.first;
-}
-
-void Font::insertCache(const char* text, const Color& color, const CachedText& entry) const {
-    std::string key = makeKey(text, color);
-    auto it = cache_.find(key);
-    if (it != cache_.end()) {
-        it->second.first = entry;
-        lru_.splice(lru_.begin(), lru_, it->second.second);
-        return;
-    }
-
-    if (cache_.size() >= MAX_TEXT_CACHE) {
-        const std::string& oldest = lru_.back();
-        cache_.erase(oldest);
-        lru_.pop_back();
-    }
-
-    lru_.push_front(key);
-    cache_[key] = std::make_pair(entry, lru_.begin());
-}
-
-bool Font::checkMaterial(const char* text, const Color& color) const {
-    return findCache(text, color) != nullptr;
-}
-
-void Font::clearCache() {
-    cache_.clear();
-    lru_.clear();
-}
-
 void Font::measure(const char* text, float* outWidth, float* outHeight) const {
     if (!face_ || !text) {
         if (outWidth) *outWidth = 0.0f;
@@ -147,9 +101,10 @@ void Font::drawText(Canvas2D* canvas, float x, float y,
                     const char* text, const Color& color) {
     if (!canvas || !face_ || !text || !*text) return;
 
-    // Check the rasterized material cache first.
-    if (const CachedText* cached = findCache(text, color)) {
-        canvas->drawMaterial(x, y, cached->material);
+    // Check Canvas2D's key-based material cache first.
+    std::string key = makeKey(text, color);
+    if (canvas->checkMaterial(key.c_str())) {
+        canvas->drawMaterial(key.c_str(), x, y);
         return;
     }
 
@@ -196,12 +151,11 @@ void Font::drawText(Canvas2D* canvas, float x, float y,
         penX += static_cast<int>(g->advance.x >> 6);
     }
 
-    CachedText entry;
-    entry.material = Material(width, height, PixelFormat::ARGB8888);
-    entry.material.pixels = std::move(rgba);
+    Material material(width, height, PixelFormat::ARGB8888);
+    material.pixels = std::move(rgba);
 
-    canvas->drawMaterial(x, y, entry.material);
-    insertCache(text, color, entry);
+    canvas->uploadMaterial(key.c_str(), material);
+    canvas->drawMaterial(key.c_str(), x, y);
 }
 
 } // namespace domi
