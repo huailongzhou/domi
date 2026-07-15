@@ -1,6 +1,7 @@
 #include "domi/scene_manager.h"
 #include "domi/ecs.h"
 #include "domi/script.h"
+#include "domi/render_list.h"
 #include <cstdio>
 
 namespace domi {
@@ -44,9 +45,9 @@ void SceneManager::fixedUpdate(ScriptSystem* script) {
     }
 }
 
-void SceneManager::render(Canvas2D* canvas) {
+void SceneManager::render(RenderList& list) {
     if (current_) {
-        current_->render(canvas);
+        current_->render(list);
     }
 }
 

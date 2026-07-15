@@ -29,8 +29,8 @@ public:
     // Fixed-timestep update for the active scene.
     void fixedUpdate(ScriptSystem* script);
 
-    // Render the active scene via Canvas2D.
-    void render(Canvas2D* canvas);
+    // Render the active scene via a declarative RenderList.
+    void render(RenderList& list);
 
     // Unload the current scene immediately.
     void clear(World* world, ScriptSystem* script);

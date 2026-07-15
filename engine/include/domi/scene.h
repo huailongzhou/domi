@@ -8,6 +8,7 @@ namespace domi {
 class World;
 class ScriptSystem;
 class Canvas2D;
+class RenderList;
 class UIView;
 class UIContext;
 
@@ -30,8 +31,9 @@ public:
     // Optional fixed-timestep scene logic.
     virtual void fixedUpdate() {}
 
-    // Optional scene rendering via Canvas2D (2D path only).
-    virtual void render(Canvas2D* canvas) { (void)canvas; }
+    // Optional scene rendering via a declarative RenderList (2D path only).
+    // The engine commits the list after the scene returns.
+    virtual void render(RenderList& list) { (void)list; }
 
     // Optional scene name for debugging.
     virtual const char* name() const { return "Scene"; }

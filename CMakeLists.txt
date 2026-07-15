@@ -47,6 +47,7 @@ add_library(domi_engine STATIC
     engine/src/render/renderer.cpp
     engine/src/render/render_texture.cpp
     engine/src/render/render_command_buffer.cpp
+    engine/src/render/draw_command.cpp
     engine/src/render/pass/geometry_pass.cpp
     engine/src/render/pass/shadow_pass.cpp
     engine/src/render/pass/lighting_pass.cpp

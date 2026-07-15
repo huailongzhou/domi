@@ -93,44 +93,35 @@ public:
         }
     }
 
-    void render(Canvas2D* canvas) override {
-        if (!canvas) return;
-
-        RenderList list;
-
+    void render(RenderList& list) override {
         // Horizon strip bottom edge is at y=240.
-        list.add(RenderLayer::Background, 240.0f, [&, canvas]() {
+        list.custom(RenderLayer::Background, 240.0f, [&](Canvas2D* canvas) {
             drawHorizon(canvas, 0, 120);
         });
 
         // Grass covers the lower 2/3 of the screen (y=240..720).
-        list.add(RenderLayer::Ground, 240.0f, [&, canvas]() {
-            canvas->setFillColor(Color(0.28f, 0.72f, 0.28f));
-            canvas->fillRect(0, 240, 1280, 480);
-        });
+        list.setFillColor(RenderLayer::Ground, 240.0f, Color(0.28f, 0.72f, 0.28f));
+        list.fillRect(RenderLayer::Ground, 240.0f, 0.0f, 240.0f, 1280.0f, 480.0f);
 
         // Lake on the right side of the grass, with a Bezier-curved shore.
-        list.add(RenderLayer::Ground, 241.0f, [&, canvas]() {
-            canvas->setFillColor(Color(0.18f, 0.48f, 0.78f, 1.0f));
-            canvas->beginPath();
-            canvas->moveTo(850.0f, 360.0f);
-            canvas->quadraticCurveTo(1050.0f, 330.0f, 1240.0f, 410.0f);
-            canvas->quadraticCurveTo(1300.0f, 540.0f, 1220.0f, 670.0f);
-            canvas->quadraticCurveTo(1020.0f, 710.0f, 860.0f, 640.0f);
-            canvas->quadraticCurveTo(790.0f, 510.0f, 850.0f, 360.0f);
-            canvas->closePath();
-            canvas->fill();
-
-            // Lighter shoreline highlight.
-            canvas->setStrokeColor(Color(0.45f, 0.72f, 0.95f, 1.0f));
-            canvas->setLineWidth(3.0f);
-            canvas->stroke();
-        });
+        list.setFillColor(RenderLayer::Ground, 241.0f, Color(0.18f, 0.48f, 0.78f, 1.0f));
+        list.beginPath(RenderLayer::Ground, 241.0f);
+        list.moveTo(RenderLayer::Ground, 241.0f, 850.0f, 360.0f);
+        list.quadraticCurveTo(RenderLayer::Ground, 241.0f, 1050.0f, 330.0f, 1240.0f, 410.0f);
+        list.quadraticCurveTo(RenderLayer::Ground, 241.0f, 1300.0f, 540.0f, 1220.0f, 670.0f);
+        list.quadraticCurveTo(RenderLayer::Ground, 241.0f, 1020.0f, 710.0f, 860.0f, 640.0f);
+        list.quadraticCurveTo(RenderLayer::Ground, 241.0f, 790.0f, 510.0f, 850.0f, 360.0f);
+        list.closePath(RenderLayer::Ground, 241.0f);
+        list.fill(RenderLayer::Ground, 241.0f);
+        // Lighter shoreline highlight.
+        list.setStrokeColor(RenderLayer::Ground, 241.0f, Color(0.45f, 0.72f, 0.95f, 1.0f));
+        list.setLineWidth(RenderLayer::Ground, 241.0f, 3.0f);
+        list.stroke(RenderLayer::Ground, 241.0f);
 
         // Ground-object shadows are drawn after the road surface but before
         // objects, so they are visible on both grass and asphalt. Cloud shadows
         // stay in the ShadowPass shadow mask.
-        list.add(RenderLayer::Surface, 562.0f, [&, canvas]() {
+        list.custom(RenderLayer::Surface, 562.0f, [&](Canvas2D* canvas) {
             Vec2 shadowDir = cachedLightDir_ * -1.0f;
             if (shadowDir.y > 0.0f) {
                 // Tree shadows scale with the tree. The shadow base is fixed at
@@ -154,20 +145,18 @@ public:
         });
 
         // Diagonal asphalt road across the grass. Sort by its lowest y.
-        list.add(RenderLayer::Surface, 560.0f, [&, canvas]() {
-            canvas->setFillColor(Color(0.35f, 0.35f, 0.35f));
-            canvas->beginPath();
-            canvas->moveTo(-121, 300);
-            canvas->lineTo(-79, 360);
-            canvas->lineTo(1401, 560);
-            canvas->lineTo(1359, 500);
-            canvas->closePath();
-            canvas->fill();
-        });
+        list.setFillColor(RenderLayer::Surface, 560.0f, Color(0.35f, 0.35f, 0.35f));
+        list.beginPath(RenderLayer::Surface, 560.0f);
+        list.moveTo(RenderLayer::Surface, 560.0f, -121.0f, 300.0f);
+        list.lineTo(RenderLayer::Surface, 560.0f, -79.0f, 360.0f);
+        list.lineTo(RenderLayer::Surface, 560.0f, 1401.0f, 560.0f);
+        list.lineTo(RenderLayer::Surface, 560.0f, 1359.0f, 500.0f);
+        list.closePath(RenderLayer::Surface, 560.0f);
+        list.fill(RenderLayer::Surface, 560.0f);
 
         // Dashed yellow center line. Drawn just above the asphalt so it is not
         // accidentally sorted underneath it when the two items share a layer.
-        list.add(RenderLayer::Surface, 561.0f, [&, canvas]() {
+        list.custom(RenderLayer::Surface, 561.0f, [&](Canvas2D* canvas) {
             canvas->setStrokeColor(Color(0.9f, 0.85f, 0.3f));
             canvas->setLineWidth(4.0f);
             for (int i = 0; i < 12; ++i) {
@@ -186,33 +175,33 @@ public:
 
         // Trees: trunks go into Object layer (sorted with car), foliage goes
         // into Canopy layer so it stays above objects/vehicles.
-        addTree(list, canvas, 180, 320, 0);
-        addTree(list, canvas, 940, 290, 1);
-        addTree(list, canvas, 820, 460, 2);
-        addTree(list, canvas, 220, 560, 3);
-        addTree(list, canvas, 840, 600, 4);
+        addTree(list, 180, 320, 0);
+        addTree(list, 940, 290, 1);
+        addTree(list, 820, 460, 2);
+        addTree(list, 220, 560, 3);
+        addTree(list, 840, 600, 4);
 
         // House and rocks (placed on grass). Sort by bottom edge.
-        list.add(RenderLayer::Object, 405.0f, [&, canvas]() { drawHouse(canvas, 560, 360); });
-        list.add(RenderLayer::Object, 400.0f, [&, canvas]() { drawRock(canvas, 420, 380, 0); });
-        list.add(RenderLayer::Object, 420.0f, [&, canvas]() { drawRock(canvas, 460, 400, 1); });
-        list.add(RenderLayer::Object, 560.0f, [&, canvas]() { drawRock(canvas, 720, 540, 2); });
-        list.add(RenderLayer::Object, 580.0f, [&, canvas]() { drawRock(canvas, 760, 560, 3); });
+        list.custom(RenderLayer::Object, 405.0f, [&](Canvas2D* canvas) { drawHouse(canvas, 560, 360); });
+        list.custom(RenderLayer::Object, 400.0f, [&](Canvas2D* canvas) { drawRock(canvas, 420, 380, 0); });
+        list.custom(RenderLayer::Object, 420.0f, [&](Canvas2D* canvas) { drawRock(canvas, 460, 400, 1); });
+        list.custom(RenderLayer::Object, 560.0f, [&](Canvas2D* canvas) { drawRock(canvas, 720, 540, 2); });
+        list.custom(RenderLayer::Object, 580.0f, [&](Canvas2D* canvas) { drawRock(canvas, 760, 560, 3); });
 
         // Clouds. Sort by center y so lower (farther back) clouds draw first.
         // All y values are within the sky band; some overlap the hills while
         // others sit clearly above them.
-        list.add(RenderLayer::Background, 100.0f, [&, canvas]() { drawCloud(canvas, 150 + cloudOffset_, 100, 0); });
-        list.add(RenderLayer::Background,  80.0f, [&, canvas]() { drawCloud(canvas, 450 + cloudOffset_ * 0.7f, 80, 1); });
-        list.add(RenderLayer::Background, 130.0f, [&, canvas]() { drawCloud(canvas, 800 + cloudOffset_ * 1.2f, 130, 2); });
-        list.add(RenderLayer::Background, 170.0f, [&, canvas]() { drawCloud(canvas, 250 + cloudOffset_ * 0.5f, 170, 3); });
-        list.add(RenderLayer::Background, 200.0f, [&, canvas]() { drawCloud(canvas, 650 + cloudOffset_ * 0.9f, 200, 4); });
-        list.add(RenderLayer::Background, 230.0f, [&, canvas]() { drawCloud(canvas, 1050 + cloudOffset_ * 1.1f, 230, 5); });
+        list.custom(RenderLayer::Background, 100.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 150 + cloudOffset_, 100, 0); });
+        list.custom(RenderLayer::Background,  80.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 450 + cloudOffset_ * 0.7f, 80, 1); });
+        list.custom(RenderLayer::Background, 130.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 800 + cloudOffset_ * 1.2f, 130, 2); });
+        list.custom(RenderLayer::Background, 170.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 250 + cloudOffset_ * 0.5f, 170, 3); });
+        list.custom(RenderLayer::Background, 200.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 650 + cloudOffset_ * 0.9f, 200, 4); });
+        list.custom(RenderLayer::Background, 230.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 1050 + cloudOffset_ * 1.1f, 230, 5); });
 
         // 3D car: follows the road, drawn in the Object layer.
         float cx = -100 + carT_ * 1480;
         float cy = 330 + carT_ * 200;
-        list.add(RenderLayer::Object, cy, [&, canvas, cx, cy]() {
+        list.custom(RenderLayer::Object, cy, [&, cx, cy](Canvas2D* canvas) {
             canvas->setRenderMode(useZBuffer_ ? RenderMode::ZBUFFER : RenderMode::PAINTER);
             canvas->begin3D();
             draw3DCar(canvas, cx, cy);
@@ -220,7 +209,7 @@ public:
         });
 
         // 3D rotating cube: drawn as a screen-space effect on top of the scene.
-        list.add(RenderLayer::Effect, 550.0f, [&, canvas]() {
+        list.custom(RenderLayer::Effect, 550.0f, [&](Canvas2D* canvas) {
             canvas->setRenderMode(useZBuffer_ ? RenderMode::ZBUFFER : RenderMode::PAINTER);
             canvas->begin3D();
             drawCube3D(canvas, 1050.0f, 520.0f, 60.0f, cubeAngleX_, cubeAngleY_);
@@ -228,12 +217,8 @@ public:
         });
 
         // Day/night color overlay.
-        list.add(RenderLayer::Overlay, 0.0f, [&, canvas]() {
-            canvas->setFillColor(cachedOverlay_);
-            canvas->fillRect(0, 0, 1280, 720);
-        });
-
-        list.flush();
+        list.setFillColor(RenderLayer::Overlay, 0.0f, cachedOverlay_);
+        list.fillRect(RenderLayer::Overlay, 0.0f, 0.0f, 0.0f, 1280.0f, 720.0f);
     }
 
 private:
@@ -271,16 +256,16 @@ private:
     void createShadowCasters(World* world);
     void updateCloudShadowCasters();
 
-    void addTree(RenderList& list, Canvas2D* canvas, float x, float y, size_t index) {
+    void addTree(RenderList& list, float x, float y, size_t index) {
         // Sort by the tree's bottom edge (material center + half height).
         // Foliage uses the same sort key plus a tiny offset so it draws after
         // the trunk within the same tree.
         const float treeHeight = 80.0f;
         float bottomZ = y + treeHeight * 0.5f;
-        list.add(RenderLayer::Object, bottomZ, [&, canvas, x, y, index]() {
+        list.custom(RenderLayer::Object, bottomZ, [this, x, y, index](Canvas2D* canvas) {
             drawTreeTrunk(canvas, x, y, index);
         });
-        list.add(RenderLayer::Object, bottomZ + 0.1f, [&, canvas, x, y, index]() {
+        list.custom(RenderLayer::Object, bottomZ + 0.1f, [this, x, y, index](Canvas2D* canvas) {
             drawTreeFoliage(canvas, x, y, index);
         });
     }
@@ -862,22 +847,20 @@ public:
         }
     }
 
-    void render(Canvas2D* canvas) override {
-        if (!canvas) return;
-
+    void render(RenderList& list) override {
         // Background
-        canvas->setFillColor(Color(0.08f, 0.08f, 0.12f));
-        canvas->fillRect(0, 0, 1280, 720);
+        list.setFillColor(RenderLayer::Background, 0.0f, Color(0.08f, 0.08f, 0.12f));
+        list.fillRect(RenderLayer::Background, 0.0f, 0.0f, 0.0f, 1280.0f, 720.0f);
 
         // Title bar
-        canvas->setFillColor(Color(0.9f, 0.9f, 0.9f));
-        canvas->fillRect(340, 160, 600, 80);
+        list.setFillColor(RenderLayer::Background, 1.0f, Color(0.9f, 0.9f, 0.9f));
+        list.fillRect(RenderLayer::Background, 1.0f, 340.0f, 160.0f, 600.0f, 80.0f);
 
         // Hint bars representing "Press 1 or click for 2D, Press 2 or click for 3D"
-        canvas->setFillColor(Color(0.7f, 0.7f, 0.7f));
-        canvas->fillRect(440, 560, 400, 6);
-        canvas->fillRect(440, 580, 400, 6);
-        canvas->fillRect(440, 600, 280, 6);
+        list.setFillColor(RenderLayer::Background, 2.0f, Color(0.7f, 0.7f, 0.7f));
+        list.fillRect(RenderLayer::Background, 2.0f, 440.0f, 560.0f, 400.0f, 6.0f);
+        list.fillRect(RenderLayer::Background, 2.0f, 440.0f, 580.0f, 400.0f, 6.0f);
+        list.fillRect(RenderLayer::Background, 2.0f, 440.0f, 600.0f, 280.0f, 6.0f);
     }
 
 private:

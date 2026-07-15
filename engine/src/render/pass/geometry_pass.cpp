@@ -1,6 +1,7 @@
 #include "domi/pass/geometry_pass.h"
 #include "domi/render_command_buffer.h"
 #include "domi/render_texture.h"
+#include "domi/render_list.h"
 #include "domi/scene_manager.h"
 #include "domi/canvas2d.h"
 #include "domi/ecs.h"
@@ -43,11 +44,13 @@ void GeometryPass::record(CommandBuffer& cmd, RenderContext& ctx) {
         cmd.fillRect(x, y, w, h);
     }
 
-    // Let the active Scene paint its custom Canvas2D content on top.
+    // Let the active Scene record declarative draw commands on top.
     if (sceneManager_) {
         Canvas2D* canvas = cmd.getCanvas();
         if (canvas) {
-            sceneManager_->render(canvas);
+            RenderList list;
+            sceneManager_->render(list);
+            list.flush(canvas);
         }
     }
 }
