@@ -137,8 +137,8 @@ public:
                 // the tree's bottom (y + 40) while the shadow size shrinks with distance.
                 struct TreePos { float x, y; };
                 TreePos trees[] = {
-                    { 180, 320 }, { 1100, 300 }, { 980, 480 },
-                    { 220, 560 }, { 1150, 620 }
+                    { 180, 320 }, { 940, 290 }, { 820, 460 },
+                    { 220, 560 }, { 840, 600 }
                 };
                 for (const auto& t : trees) {
                     float s = perspectiveScale(t.y);
@@ -187,10 +187,10 @@ public:
         // Trees: trunks go into Object layer (sorted with car), foliage goes
         // into Canopy layer so it stays above objects/vehicles.
         addTree(list, canvas, 180, 320, 0);
-        addTree(list, canvas, 1100, 300, 1);
-        addTree(list, canvas, 980, 480, 2);
+        addTree(list, canvas, 940, 290, 1);
+        addTree(list, canvas, 820, 460, 2);
         addTree(list, canvas, 220, 560, 3);
-        addTree(list, canvas, 1150, 620, 4);
+        addTree(list, canvas, 840, 600, 4);
 
         // House and rocks (placed on grass). Sort by bottom edge.
         list.add(RenderLayer::Object, 405.0f, [&, canvas]() { drawHouse(canvas, 560, 360); });
