@@ -190,6 +190,10 @@ public:
 
     MaterialNode& setZ(float z_) { z = z_; return *this; }
 
+    // Sort by the sprite's bottom edge (drawY + height) instead of z.
+    // Matches the ground perspective: lower on screen = closer = drawn later.
+    MaterialNode& sortByBottom() { sortByBottom_ = true; return *this; }
+
     void build(RenderList& list, RenderLayer layer) const override {
         if (!material_ || material_->width == 0) return;
         float dx = x_;
@@ -198,7 +202,8 @@ public:
             dx -= material_->width * 0.5f;
             dy -= material_->height * 0.5f;
         }
-        list.drawMaterial(layer, z, dx, dy, *material_);
+        float sortZ = sortByBottom_ ? dy + static_cast<float>(material_->height) : z;
+        list.drawMaterial(layer, sortZ, dx, dy, *material_);
     }
 
     void setPosition(float x, float y) { x_ = x; y_ = y; }
@@ -208,6 +213,7 @@ private:
     const Material* material_;
     float x_, y_;
     bool centered_;
+    bool sortByBottom_ = false;
 };
 
 // A recorded path (moveTo/lineTo/curves/close) that can be filled and/or stroked.

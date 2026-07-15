@@ -76,9 +76,31 @@ private:
     Entity blockEntity_;
 };
 
+// Scene layout data: the single source of truth for object placement.
+// buildRenderTree(), updateRenderNodes(), updateCloudShadowCasters() and
+// drawGroundShadows() all read from these tables.
+namespace {
+struct CloudDef { float baseX; float y; float speed; }; // sort z = y
+const CloudDef kClouds[] = {
+    {  150.0f, 100.0f, 1.0f },
+    {  450.0f,  80.0f, 0.7f },
+    {  800.0f, 130.0f, 1.2f },
+    {  250.0f, 170.0f, 0.5f },
+    {  650.0f, 200.0f, 0.9f },
+    { 1050.0f, 230.0f, 1.1f },
+};
+const int kCloudCount = sizeof(kClouds) / sizeof(kClouds[0]);
+
+struct TreeDef { float x; float y; }; // sort z = trunk bottom (y + 40)
+const TreeDef kTrees[] = {
+    { 180.0f, 320.0f }, { 940.0f, 290.0f }, { 820.0f, 460.0f },
+    { 220.0f, 560.0f }, { 840.0f, 600.0f },
+};
+const int kTreeCount = sizeof(kTrees) / sizeof(kTrees[0]);
+} // namespace
+
 class Game2DScene : public Scene {
 public:
-    static constexpr int kCloudCount = 6;
     static constexpr float kHorizonY = 240.0f;
 
     Game2DScene()
@@ -165,6 +187,7 @@ private:
     void updateCloudShadowCasters();
     void buildRenderTree();
     void updateRenderNodes();
+    Vec2 cloudPosition(int i) const;
 
     // Dynamic render nodes that are animated in update().
     std::vector<MaterialNode*> cloudNodes_;
@@ -186,14 +209,9 @@ private:
         Vec2 shadowDir = cachedLightDir_ * -1.0f;
         if (shadowDir.y <= 0.0f) return;
 
-        struct TreePos { float x, y; };
-        TreePos trees[] = {
-            { 180, 320 }, { 940, 290 }, { 820, 460 },
-            { 220, 560 }, { 840, 600 }
-        };
-        for (const auto& t : trees) {
-            float s = perspectiveScale(t.y);
-            SceneFunction::drawShadow(batch, t.x, t.y + 40.0f,
+        for (int i = 0; i < kTreeCount; ++i) {
+            float s = perspectiveScale(kTrees[i].y);
+            SceneFunction::drawShadow(batch, kTrees[i].x, kTrees[i].y + 40.0f,
                                       32.0f * s, 10.0f * s, 0.0f,
                                       shadowDir);
         }
@@ -249,7 +267,7 @@ void Game2DScene::load(World* world, ScriptSystem* script) {
     // scene looks varied instead of repeating the same sprite.
     treeTrunks_.clear();
     treeFoliages_.clear();
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < kTreeCount; ++i) {
         Material trunk, foliage;
         TreeGenerator()
             .setSize(80, 80)
@@ -329,23 +347,22 @@ void Game2DScene::unload(World* world, ScriptSystem* script) {
 void Game2DScene::buildRenderTree() {
     auto root = std::unique_ptr<GroupNode>(new GroupNode());
 
-    // Background layer: horizon and clouds.
+    // Background layer: horizon and clouds (clouds sort by their y).
     LayerView& background = root->backgroundLayer(
-        MaterialNode(horizonMaterial_, 0.0f, 120.0f).setZ(240.0f)
+        MaterialNode(horizonMaterial_, 0.0f, 120.0f).setZ(kHorizonY)
     );
-    const float cloudZ[kCloudCount] = { 100.0f, 80.0f, 130.0f, 170.0f, 200.0f, 230.0f };
     cloudNodes_.clear();
     for (int i = 0; i < kCloudCount; ++i) {
         MaterialNode& node = background.addChild<MaterialNode>(
-            cloudZ[i], cloudMaterials_[i], 0.0f, 0.0f, true);
+            kClouds[i].y, cloudMaterials_[i], 0.0f, 0.0f, true);
         cloudNodes_.push_back(&node);
     }
 
     // Ground layer: grass and lake.
     root->groundLayer(
-        RectNode(0.0f, 240.0f, 1280.0f, 480.0f,
-                 Color(0.28f, 0.72f, 0.28f)).setZ(240.0f),
-        PathNode().setZ(241.0f)
+        RectNode(0.0f, kHorizonY, 1280.0f, 480.0f,
+                 Color(0.28f, 0.72f, 0.28f)).setZ(kHorizonY),
+        PathNode().setZ(kHorizonY + 1.0f)
             .fillColor(Color(0.18f, 0.48f, 0.78f, 1.0f))
             .strokeColor(Color(0.45f, 0.72f, 0.95f, 1.0f))
             .lineWidth(3.0f)
@@ -371,23 +388,22 @@ void Game2DScene::buildRenderTree() {
     );
 
     // Object layer: trees, house, rocks, and the 3D car.
+    // Sprites sort by their bottom edge; the car's z is animated per frame.
     LayerView& object = root->objectLayer();
-    const float treeX[5] = { 180.0f, 940.0f, 820.0f, 220.0f, 840.0f };
-    const float treeY[5] = { 320.0f, 290.0f, 460.0f, 560.0f, 600.0f };
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < kTreeCount; ++i) {
         TreeNode& node = object.addChild<TreeNode>(0.0f);
         node.trunk = &treeTrunks_[i];
         node.foliage = &treeFoliages_[i];
-        node.x = treeX[i];
-        node.y = treeY[i];
-        node.scale = perspectiveScale(treeY[i]);
+        node.x = kTrees[i].x;
+        node.y = kTrees[i].y;
+        node.scale = perspectiveScale(kTrees[i].y);
     }
     object.add(
-        MaterialNode(houseMaterial_, 560.0f, 360.0f, true).setZ(405.0f),
-        MaterialNode(rockMaterials_[0], 420.0f, 380.0f, true).setZ(400.0f),
-        MaterialNode(rockMaterials_[1], 460.0f, 400.0f, true).setZ(420.0f),
-        MaterialNode(rockMaterials_[2], 720.0f, 540.0f, true).setZ(560.0f),
-        MaterialNode(rockMaterials_[3], 760.0f, 560.0f, true).setZ(580.0f)
+        MaterialNode(houseMaterial_, 560.0f, 360.0f, true).sortByBottom(),
+        MaterialNode(rockMaterials_[0], 420.0f, 380.0f, true).sortByBottom(),
+        MaterialNode(rockMaterials_[1], 460.0f, 400.0f, true).sortByBottom(),
+        MaterialNode(rockMaterials_[2], 720.0f, 540.0f, true).sortByBottom(),
+        MaterialNode(rockMaterials_[3], 760.0f, 560.0f, true).sortByBottom()
     );
     carNode_ = &object.addChild<CustomNode>(0.0f, [this](DrawBatch& batch) {
         float cx = -100 + carT_ * 1480;
@@ -417,21 +433,15 @@ void Game2DScene::buildRenderTree() {
     updateRenderNodes();
 }
 
+Vec2 Game2DScene::cloudPosition(int i) const {
+    return Vec2(kClouds[i].baseX + cloudOffset_ * kClouds[i].speed, kClouds[i].y);
+}
+
 void Game2DScene::updateRenderNodes() {
     // Cloud positions drift with cloudOffset_.
-    if (cloudNodes_.size() >= (size_t)kCloudCount) {
-        struct CloudPos { float x, y; };
-        CloudPos positions[kCloudCount] = {
-            { 150.0f + cloudOffset_,          100.0f },
-            { 450.0f + cloudOffset_ * 0.7f,    80.0f },
-            { 800.0f + cloudOffset_ * 1.2f,   130.0f },
-            { 250.0f + cloudOffset_ * 0.5f,   170.0f },
-            { 650.0f + cloudOffset_ * 0.9f,   200.0f },
-            { 1050.0f + cloudOffset_ * 1.1f,  230.0f }
-        };
-        for (int i = 0; i < kCloudCount; ++i) {
-            cloudNodes_[i]->setPosition(positions[i].x, positions[i].y);
-        }
+    for (int i = 0; i < kCloudCount && i < (int)cloudNodes_.size(); ++i) {
+        Vec2 p = cloudPosition(i);
+        cloudNodes_[i]->setPosition(p.x, p.y);
     }
 
     // The car's z follows its screen y so it sorts correctly with other objects.
@@ -477,16 +487,6 @@ void Game2DScene::updateCloudShadowCasters() {
     World* world = App::instance().getWorld();
     if (!world || cloudEntities_.size() < (size_t)kCloudCount) return;
 
-    struct CloudPos { float x, y; };
-    CloudPos positions[kCloudCount] = {
-        { 150.0f + cloudOffset_,          100.0f },
-        { 450.0f + cloudOffset_ * 0.7f,    80.0f },
-        { 800.0f + cloudOffset_ * 1.2f,   130.0f },
-        { 250.0f + cloudOffset_ * 0.5f,   170.0f },
-        { 650.0f + cloudOffset_ * 0.9f,   200.0f },
-        { 1050.0f + cloudOffset_ * 1.1f,  230.0f }
-    };
-
     const float horizonDrawY = 120.0f;
     const float cloudHalfH = 40.0f;
     const int skylineW = static_cast<int>(horizonSkyline_.size());
@@ -495,20 +495,21 @@ void Game2DScene::updateCloudShadowCasters() {
     bool sunAboveHorizon = (cachedLightDir_.y < 0.0f);
 
     for (int i = 0; i < kCloudCount; ++i) {
+        Vec2 pos = cloudPosition(i);
         TransformComponent* t = world->getComponent<TransformComponent>(cloudEntities_[i]);
         SpriteComponent* s = world->getComponent<SpriteComponent>(cloudEntities_[i]);
         if (t) {
-            t->transform.position.x = positions[i].x;
-            t->transform.position.y = positions[i].y;
+            t->transform.position.x = pos.x;
+            t->transform.position.y = pos.y;
         }
 
         // A cloud casts a shadow only while the sun is up and the cloud is
         // clearly above the horizon hills.
         if (s && skylineW > 0) {
-            int idx = static_cast<int>(positions[i].x);
+            int idx = static_cast<int>(pos.x);
             if (idx < 0) idx = 0;
             if (idx >= skylineW) idx = skylineW - 1;
-            float cloudBottom = positions[i].y + cloudHalfH;
+            float cloudBottom = pos.y + cloudHalfH;
             float screenSkyline = horizonDrawY + static_cast<float>(horizonSkyline_[idx]);
             s->castShadow = sunAboveHorizon && (cloudBottom < screenSkyline);
         }
