@@ -6,9 +6,9 @@
 #include "domi/scene_manager.h"
 #include "domi/math.h"
 #include "domi/input.h"
-#include "domi/canvas2d.h"
 #include "domi/render_layer.h"
 #include "domi/render_list.h"
+#include "domi/render_node.h"
 #include "domi/scene_function.h"
 #include "domi/ui/ui.h"
 #include "tree_generator.h"
@@ -28,6 +28,40 @@ using namespace domi;
 class Game2DScene;
 class Game3DScene;
 class MenuScene;
+
+// A 2D tree sprite with separate trunk and foliage materials.
+// The trunk is sorted by the tree bottom; foliage draws slightly after it.
+class TreeNode : public RenderNode {
+public:
+    const Material* trunk = nullptr;
+    const Material* foliage = nullptr;
+    float x = 0.0f;
+    float y = 0.0f;
+    float scale = 1.0f;
+
+    void build(RenderList& list, RenderLayer layer) const override {
+        const float treeHeight = 80.0f;
+        float bottomZ = y + treeHeight * 0.5f;
+        if (trunk && trunk->width > 0) {
+            DrawBatch batch;
+            batch.save();
+            batch.translate(x, y + 40.0f);
+            batch.scale(scale, scale);
+            batch.drawMaterial(-trunk->width * 0.5f, -trunk->height, *trunk);
+            batch.restore();
+            list.submit(layer, bottomZ, batch);
+        }
+        if (foliage && foliage->width > 0) {
+            DrawBatch batch;
+            batch.save();
+            batch.translate(x, y + 40.0f);
+            batch.scale(scale, scale);
+            batch.drawMaterial(-foliage->width * 0.5f, -foliage->height, *foliage);
+            batch.restore();
+            list.submit(layer, bottomZ + 0.1f, batch);
+        }
+    }
+};
 
 class SecondScene : public Scene {
 public:
@@ -54,7 +88,8 @@ public:
           cachedSunColor_(1.0f, 0.95f, 0.85f, 1.0f),
           cachedSunIntensity_(1.0f),
           cachedLightDir_(0.0f, -1.0f),
-          cachedOverlay_(1.0f, 1.0f, 1.0f, 0.0f) {}
+          cachedOverlay_(1.0f, 1.0f, 1.0f, 0.0f),
+          carNode_(nullptr), overlayNode_(nullptr) {}
 
     const char* name() const override { return "Game2DScene"; }
 
@@ -81,6 +116,7 @@ public:
                          cachedLightDir_, cachedOverlay_);
         updateSun();
         updateCloudShadowCasters();
+        updateRenderNodes();
 
         if (App::instance().getInput()->isKeyPressed(SDL_SCANCODE_R)) {
             App::instance().getSceneManager()->setNext(new SecondScene());
@@ -91,134 +127,6 @@ public:
             fprintf(stderr, "[GAME2D] Render mode: %s\n",
                     useZBuffer_ ? "z-buffer" : "painter");
         }
-    }
-
-    void render(RenderList& list) override {
-        // Horizon strip bottom edge is at y=240.
-        list.custom(RenderLayer::Background, 240.0f, [&](Canvas2D* canvas) {
-            drawHorizon(canvas, 0, 120);
-        });
-
-        // Grass covers the lower 2/3 of the screen (y=240..720).
-        list.setFillColor(RenderLayer::Ground, 240.0f, Color(0.28f, 0.72f, 0.28f));
-        list.fillRect(RenderLayer::Ground, 240.0f, 0.0f, 240.0f, 1280.0f, 480.0f);
-
-        // Lake on the right side of the grass, with a Bezier-curved shore.
-        list.setFillColor(RenderLayer::Ground, 241.0f, Color(0.18f, 0.48f, 0.78f, 1.0f));
-        list.beginPath(RenderLayer::Ground, 241.0f);
-        list.moveTo(RenderLayer::Ground, 241.0f, 850.0f, 360.0f);
-        list.quadraticCurveTo(RenderLayer::Ground, 241.0f, 1050.0f, 330.0f, 1240.0f, 410.0f);
-        list.quadraticCurveTo(RenderLayer::Ground, 241.0f, 1300.0f, 540.0f, 1220.0f, 670.0f);
-        list.quadraticCurveTo(RenderLayer::Ground, 241.0f, 1020.0f, 710.0f, 860.0f, 640.0f);
-        list.quadraticCurveTo(RenderLayer::Ground, 241.0f, 790.0f, 510.0f, 850.0f, 360.0f);
-        list.closePath(RenderLayer::Ground, 241.0f);
-        list.fill(RenderLayer::Ground, 241.0f);
-        // Lighter shoreline highlight.
-        list.setStrokeColor(RenderLayer::Ground, 241.0f, Color(0.45f, 0.72f, 0.95f, 1.0f));
-        list.setLineWidth(RenderLayer::Ground, 241.0f, 3.0f);
-        list.stroke(RenderLayer::Ground, 241.0f);
-
-        // Ground-object shadows are drawn after the road surface but before
-        // objects, so they are visible on both grass and asphalt. Cloud shadows
-        // stay in the ShadowPass shadow mask.
-        list.custom(RenderLayer::Surface, 562.0f, [&](Canvas2D* canvas) {
-            Vec2 shadowDir = cachedLightDir_ * -1.0f;
-            if (shadowDir.y > 0.0f) {
-                // Tree shadows scale with the tree. The shadow base is fixed at
-                // the tree's bottom (y + 40) while the shadow size shrinks with distance.
-                struct TreePos { float x, y; };
-                TreePos trees[] = {
-                    { 180, 320 }, { 940, 290 }, { 820, 460 },
-                    { 220, 560 }, { 840, 600 }
-                };
-                for (const auto& t : trees) {
-                    float s = perspectiveScale(t.y);
-                    SceneFunction::drawShadow(canvas, t.x, t.y + 40.0f,
-                                              32.0f * s, 10.0f * s, 0.0f,
-                                              shadowDir);
-                }
-                // House shadow base is at y + 45 (90px tall, centered).
-                SceneFunction::drawShadow(canvas, 560,  360, 48.0f, 16.0f, 45.0f, shadowDir);
-                // Cube shadow base is at y + 30 (60px size, centered).
-                SceneFunction::drawShadow(canvas, 1050, 520, 34.0f, 12.0f, 30.0f, shadowDir);
-            }
-        });
-
-        // Diagonal asphalt road across the grass. Sort by its lowest y.
-        list.setFillColor(RenderLayer::Surface, 560.0f, Color(0.35f, 0.35f, 0.35f));
-        list.beginPath(RenderLayer::Surface, 560.0f);
-        list.moveTo(RenderLayer::Surface, 560.0f, -121.0f, 300.0f);
-        list.lineTo(RenderLayer::Surface, 560.0f, -79.0f, 360.0f);
-        list.lineTo(RenderLayer::Surface, 560.0f, 1401.0f, 560.0f);
-        list.lineTo(RenderLayer::Surface, 560.0f, 1359.0f, 500.0f);
-        list.closePath(RenderLayer::Surface, 560.0f);
-        list.fill(RenderLayer::Surface, 560.0f);
-
-        // Dashed yellow center line. Drawn just above the asphalt so it is not
-        // accidentally sorted underneath it when the two items share a layer.
-        list.custom(RenderLayer::Surface, 561.0f, [&](Canvas2D* canvas) {
-            canvas->setStrokeColor(Color(0.9f, 0.85f, 0.3f));
-            canvas->setLineWidth(4.0f);
-            for (int i = 0; i < 12; ++i) {
-                float t0 = i / 12.0f;
-                float t1 = (i + 0.5f) / 12.0f;
-                float x0 = -100 + t0 * 1480;
-                float y0 = 330 + t0 * 200;
-                float x1 = -100 + t1 * 1480;
-                float y1 = 330 + t1 * 200;
-                canvas->beginPath();
-                canvas->moveTo(x0, y0);
-                canvas->lineTo(x1, y1);
-                canvas->stroke();
-            }
-        });
-
-        // Trees: trunks go into Object layer (sorted with car), foliage goes
-        // into Canopy layer so it stays above objects/vehicles.
-        addTree(list, 180, 320, 0);
-        addTree(list, 940, 290, 1);
-        addTree(list, 820, 460, 2);
-        addTree(list, 220, 560, 3);
-        addTree(list, 840, 600, 4);
-
-        // House and rocks (placed on grass). Sort by bottom edge.
-        list.custom(RenderLayer::Object, 405.0f, [&](Canvas2D* canvas) { drawHouse(canvas, 560, 360); });
-        list.custom(RenderLayer::Object, 400.0f, [&](Canvas2D* canvas) { drawRock(canvas, 420, 380, 0); });
-        list.custom(RenderLayer::Object, 420.0f, [&](Canvas2D* canvas) { drawRock(canvas, 460, 400, 1); });
-        list.custom(RenderLayer::Object, 560.0f, [&](Canvas2D* canvas) { drawRock(canvas, 720, 540, 2); });
-        list.custom(RenderLayer::Object, 580.0f, [&](Canvas2D* canvas) { drawRock(canvas, 760, 560, 3); });
-
-        // Clouds. Sort by center y so lower (farther back) clouds draw first.
-        // All y values are within the sky band; some overlap the hills while
-        // others sit clearly above them.
-        list.custom(RenderLayer::Background, 100.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 150 + cloudOffset_, 100, 0); });
-        list.custom(RenderLayer::Background,  80.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 450 + cloudOffset_ * 0.7f, 80, 1); });
-        list.custom(RenderLayer::Background, 130.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 800 + cloudOffset_ * 1.2f, 130, 2); });
-        list.custom(RenderLayer::Background, 170.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 250 + cloudOffset_ * 0.5f, 170, 3); });
-        list.custom(RenderLayer::Background, 200.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 650 + cloudOffset_ * 0.9f, 200, 4); });
-        list.custom(RenderLayer::Background, 230.0f, [&](Canvas2D* canvas) { drawCloud(canvas, 1050 + cloudOffset_ * 1.1f, 230, 5); });
-
-        // 3D car: follows the road, drawn in the Object layer.
-        float cx = -100 + carT_ * 1480;
-        float cy = 330 + carT_ * 200;
-        list.custom(RenderLayer::Object, cy, [&, cx, cy](Canvas2D* canvas) {
-            canvas->setRenderMode(useZBuffer_ ? RenderMode::ZBUFFER : RenderMode::PAINTER);
-            canvas->begin3D();
-            draw3DCar(canvas, cx, cy);
-            canvas->end3D();
-        });
-
-        // 3D rotating cube: drawn as a screen-space effect on top of the scene.
-        list.custom(RenderLayer::Effect, 550.0f, [&](Canvas2D* canvas) {
-            canvas->setRenderMode(useZBuffer_ ? RenderMode::ZBUFFER : RenderMode::PAINTER);
-            canvas->begin3D();
-            drawCube3D(canvas, 1050.0f, 520.0f, 60.0f, cubeAngleX_, cubeAngleY_);
-            canvas->end3D();
-        });
-
-        // Day/night color overlay.
-        list.setFillColor(RenderLayer::Overlay, 0.0f, cachedOverlay_);
-        list.fillRect(RenderLayer::Overlay, 0.0f, 0.0f, 0.0f, 1280.0f, 720.0f);
     }
 
 private:
@@ -255,20 +163,13 @@ private:
 
     void createShadowCasters(World* world);
     void updateCloudShadowCasters();
+    void buildRenderTree();
+    void updateRenderNodes();
 
-    void addTree(RenderList& list, float x, float y, size_t index) {
-        // Sort by the tree's bottom edge (material center + half height).
-        // Foliage uses the same sort key plus a tiny offset so it draws after
-        // the trunk within the same tree.
-        const float treeHeight = 80.0f;
-        float bottomZ = y + treeHeight * 0.5f;
-        list.custom(RenderLayer::Object, bottomZ, [this, x, y, index](Canvas2D* canvas) {
-            drawTreeTrunk(canvas, x, y, index);
-        });
-        list.custom(RenderLayer::Object, bottomZ + 0.1f, [this, x, y, index](Canvas2D* canvas) {
-            drawTreeFoliage(canvas, x, y, index);
-        });
-    }
+    // Dynamic render nodes that are animated in update().
+    std::vector<MaterialNode*> cloudNodes_;
+    CustomNode* carNode_;
+    RectNode* overlayNode_;
 
     float perspectiveScale(float y) const {
         // Objects near the horizon (y=240) are far away and smaller;
@@ -281,72 +182,43 @@ private:
         return minScale + t * (maxScale - minScale);
     }
 
-    void drawTreeTrunk(Canvas2D* canvas, float x, float y, size_t index) {
-        if (!canvas || index >= treeTrunks_.size()) return;
-        const Material& m = treeTrunks_[index];
-        if (m.width == 0) return;
-        float s = perspectiveScale(y);
-        float bottomY = y + 40.0f; // tree center y + half original height
-        canvas->save();
-        canvas->translate(x, bottomY);
-        canvas->scale(s, s);
-        canvas->drawMaterial(-m.width * 0.5f, -m.height, m);
-        canvas->restore();
+    void drawGroundShadows(DrawBatch& batch) {
+        Vec2 shadowDir = cachedLightDir_ * -1.0f;
+        if (shadowDir.y <= 0.0f) return;
+
+        struct TreePos { float x, y; };
+        TreePos trees[] = {
+            { 180, 320 }, { 940, 290 }, { 820, 460 },
+            { 220, 560 }, { 840, 600 }
+        };
+        for (const auto& t : trees) {
+            float s = perspectiveScale(t.y);
+            SceneFunction::drawShadow(batch, t.x, t.y + 40.0f,
+                                      32.0f * s, 10.0f * s, 0.0f,
+                                      shadowDir);
+        }
+        SceneFunction::drawShadow(batch, 560,  360, 48.0f, 16.0f, 45.0f, shadowDir);
+        SceneFunction::drawShadow(batch, 1050, 520, 34.0f, 12.0f, 30.0f, shadowDir);
     }
 
-    void drawTreeFoliage(Canvas2D* canvas, float x, float y, size_t index) {
-        if (!canvas || index >= treeFoliages_.size()) return;
-        const Material& m = treeFoliages_[index];
-        if (m.width == 0) return;
-        float s = perspectiveScale(y);
-        float bottomY = y + 40.0f; // tree center y + half original height
-        canvas->save();
-        canvas->translate(x, bottomY);
-        canvas->scale(s, s);
-        canvas->drawMaterial(-m.width * 0.5f, -m.height, m);
-        canvas->restore();
+    void drawCenterLine(DrawBatch& batch) {
+        batch.setStrokeColor(Color(0.9f, 0.85f, 0.3f));
+        batch.setLineWidth(4.0f);
+        for (int i = 0; i < 12; ++i) {
+            float t0 = i / 12.0f;
+            float t1 = (i + 0.5f) / 12.0f;
+            float x0 = -100 + t0 * 1480;
+            float y0 = 330 + t0 * 200;
+            float x1 = -100 + t1 * 1480;
+            float y1 = 330 + t1 * 200;
+            batch.beginPath();
+            batch.moveTo(x0, y0);
+            batch.lineTo(x1, y1);
+            batch.stroke();
+        }
     }
 
-    void drawCloud(Canvas2D* canvas, float x, float y, size_t index) {
-        if (!canvas || index >= cloudMaterials_.size()) return;
-        const Material& m = cloudMaterials_[index];
-        if (m.width == 0) return;
-        canvas->drawMaterial(x - m.width * 0.5f, y - m.height * 0.5f, m);
-    }
-
-    void drawRock(Canvas2D* canvas, float x, float y, size_t index) {
-        if (!canvas || index >= rockMaterials_.size()) return;
-        const Material& m = rockMaterials_[index];
-        if (m.width == 0) return;
-        canvas->drawMaterial(x - m.width * 0.5f, y - m.height * 0.5f, m);
-    }
-
-    void drawHouse(Canvas2D* canvas, float x, float y) {
-        if (!canvas || houseMaterial_.width == 0) return;
-        canvas->drawMaterial(x - houseMaterial_.width * 0.5f,
-                             y - houseMaterial_.height * 0.5f,
-                             houseMaterial_);
-    }
-
-    void drawHorizon(Canvas2D* canvas, float x, float y) {
-        if (!canvas || horizonMaterial_.width == 0) return;
-        canvas->drawMaterial(x, y, horizonMaterial_);
-    }
-
-    void drawCar(Canvas2D* canvas, float x, float y) {
-        canvas->setFillColor(Color(0.85f, 0.2f, 0.2f));
-        canvas->fillRect(x - 18, y - 10, 36, 20);
-
-        canvas->setFillColor(Color(0.2f, 0.25f, 0.4f));
-        canvas->fillRect(x - 10, y - 16, 20, 10);
-
-        canvas->setFillColor(Color(0.1f, 0.1f, 0.1f));
-        canvas->fillCircle(x - 12, y + 10, 5);
-        canvas->fillCircle(x + 12, y + 10, 5);
-    }
-
-    void draw3DCar(Canvas2D* canvas, float x, float y) {
-        if (!canvas) return;
+    void draw3DCar(DrawBatch& batch, float x, float y) {
         float time = (float)App::instance().getTime();
         float yaw = carT_ * 0.25f;
         float roll = SDL_sinf(time * 10.0f) * 0.03f;
@@ -354,22 +226,15 @@ private:
         static const std::vector<Mesh3D> carMeshes = Car3DGenerator().build();
 
         for (const Mesh3D& mesh : carMeshes) {
-            canvas->drawMesh3D(x, y, 1.0f, 0.0f, 0.0f, yaw + roll,
-                               mesh.vertices.data(), (int)mesh.vertices.size(),
-                               mesh.indices.data(), mesh.triangleCount(),
-                               mesh.color);
+            batch.drawMesh3D(x, y, 1.0f, 0.0f, 0.0f, yaw + roll, mesh);
         }
     }
 
-    void drawCube3D(Canvas2D* canvas, float cx, float cy, float size, float ax, float ay) {
-        if (!canvas) return;
+    void drawCube3D(DrawBatch& batch, float cx, float cy, float size, float ax, float ay) {
         static const std::vector<Mesh3D> cubeFaces = Cube3DGenerator().setSize(1.0f).build();
 
         for (const Mesh3D& face : cubeFaces) {
-            canvas->drawMesh3D(cx, cy, size, ax, ay, 0.0f,
-                               face.vertices.data(), (int)face.vertices.size(),
-                               face.indices.data(), face.triangleCount(),
-                               face.color);
+            batch.drawMesh3D(cx, cy, size, ax, ay, 0.0f, face);
         }
     }
 };
@@ -447,13 +312,137 @@ void Game2DScene::load(World* world, ScriptSystem* script) {
     horizonSkyline_ = horizonGen.buildSkyline();
 
     createShadowCasters(world);
+    buildRenderTree();
 }
 
 void Game2DScene::unload(World* world, ScriptSystem* script) {
     (void)script;
+    setRootNode(nullptr);
+    cloudNodes_.clear();
+    carNode_ = nullptr;
+    overlayNode_ = nullptr;
     if (world) world->clear();
     sunEntity_ = 0;
     cloudEntities_.clear();
+}
+
+void Game2DScene::buildRenderTree() {
+    auto root = std::unique_ptr<GroupNode>(new GroupNode());
+
+    // Background layer: horizon and clouds.
+    LayerView& background = root->backgroundLayer(
+        MaterialNode(horizonMaterial_, 0.0f, 120.0f).setZ(240.0f)
+    );
+    const float cloudZ[kCloudCount] = { 100.0f, 80.0f, 130.0f, 170.0f, 200.0f, 230.0f };
+    cloudNodes_.clear();
+    for (int i = 0; i < kCloudCount; ++i) {
+        MaterialNode& node = background.addChild<MaterialNode>(
+            cloudZ[i], cloudMaterials_[i], 0.0f, 0.0f, true);
+        cloudNodes_.push_back(&node);
+    }
+
+    // Ground layer: grass and lake.
+    root->groundLayer(
+        RectNode(0.0f, 240.0f, 1280.0f, 480.0f,
+                 Color(0.28f, 0.72f, 0.28f)).setZ(240.0f),
+        PathNode().setZ(241.0f)
+            .fillColor(Color(0.18f, 0.48f, 0.78f, 1.0f))
+            .strokeColor(Color(0.45f, 0.72f, 0.95f, 1.0f))
+            .lineWidth(3.0f)
+            .moveTo(850.0f, 360.0f)
+            .quadraticCurveTo(1050.0f, 330.0f, 1240.0f, 410.0f)
+            .quadraticCurveTo(1300.0f, 540.0f, 1220.0f, 670.0f)
+            .quadraticCurveTo(1020.0f, 710.0f, 860.0f, 640.0f)
+            .quadraticCurveTo(790.0f, 510.0f, 850.0f, 360.0f)
+            .closePath()
+    );
+
+    // Surface layer: road, center line, and ground-object shadows.
+    root->surfaceLayer(
+        PathNode().setZ(560.0f)
+            .fillColor(Color(0.35f, 0.35f, 0.35f))
+            .moveTo(-121.0f, 300.0f)
+            .lineTo(-79.0f, 360.0f)
+            .lineTo(1401.0f, 560.0f)
+            .lineTo(1359.0f, 500.0f)
+            .closePath(),
+        CustomNode([this](DrawBatch& batch) { drawCenterLine(batch); }).setZ(561.0f),
+        CustomNode([this](DrawBatch& batch) { drawGroundShadows(batch); }).setZ(562.0f)
+    );
+
+    // Object layer: trees, house, rocks, and the 3D car.
+    LayerView& object = root->objectLayer();
+    const float treeX[5] = { 180.0f, 940.0f, 820.0f, 220.0f, 840.0f };
+    const float treeY[5] = { 320.0f, 290.0f, 460.0f, 560.0f, 600.0f };
+    for (int i = 0; i < 5; ++i) {
+        TreeNode& node = object.addChild<TreeNode>(0.0f);
+        node.trunk = &treeTrunks_[i];
+        node.foliage = &treeFoliages_[i];
+        node.x = treeX[i];
+        node.y = treeY[i];
+        node.scale = perspectiveScale(treeY[i]);
+    }
+    object.add(
+        MaterialNode(houseMaterial_, 560.0f, 360.0f, true).setZ(405.0f),
+        MaterialNode(rockMaterials_[0], 420.0f, 380.0f, true).setZ(400.0f),
+        MaterialNode(rockMaterials_[1], 460.0f, 400.0f, true).setZ(420.0f),
+        MaterialNode(rockMaterials_[2], 720.0f, 540.0f, true).setZ(560.0f),
+        MaterialNode(rockMaterials_[3], 760.0f, 560.0f, true).setZ(580.0f)
+    );
+    carNode_ = &object.addChild<CustomNode>(0.0f, [this](DrawBatch& batch) {
+        float cx = -100 + carT_ * 1480;
+        float cy = 330 + carT_ * 200;
+        batch.setRenderMode(useZBuffer_ ? RenderMode::ZBUFFER : RenderMode::PAINTER);
+        batch.begin3D();
+        draw3DCar(batch, cx, cy);
+        batch.end3D();
+    });
+
+    // Effect layer: 3D rotating cube.
+    root->effectLayer(
+        CustomNode([this](DrawBatch& batch) {
+            batch.setRenderMode(useZBuffer_ ? RenderMode::ZBUFFER : RenderMode::PAINTER);
+            batch.begin3D();
+            drawCube3D(batch, 1050.0f, 520.0f, 60.0f, cubeAngleX_, cubeAngleY_);
+            batch.end3D();
+        }).setZ(550.0f)
+    );
+
+    // Overlay layer: day/night tint.
+    LayerView& overlay = root->overlayLayer();
+    overlayNode_ = &overlay.addChild<RectNode>(
+        0.0f, 0.0f, 0.0f, 1280.0f, 720.0f, cachedOverlay_);
+
+    setRootNode(std::move(root));
+    updateRenderNodes();
+}
+
+void Game2DScene::updateRenderNodes() {
+    // Cloud positions drift with cloudOffset_.
+    if (cloudNodes_.size() >= (size_t)kCloudCount) {
+        struct CloudPos { float x, y; };
+        CloudPos positions[kCloudCount] = {
+            { 150.0f + cloudOffset_,          100.0f },
+            { 450.0f + cloudOffset_ * 0.7f,    80.0f },
+            { 800.0f + cloudOffset_ * 1.2f,   130.0f },
+            { 250.0f + cloudOffset_ * 0.5f,   170.0f },
+            { 650.0f + cloudOffset_ * 0.9f,   200.0f },
+            { 1050.0f + cloudOffset_ * 1.1f,  230.0f }
+        };
+        for (int i = 0; i < kCloudCount; ++i) {
+            cloudNodes_[i]->setPosition(positions[i].x, positions[i].y);
+        }
+    }
+
+    // The car's z follows its screen y so it sorts correctly with other objects.
+    if (carNode_) {
+        carNode_->z = 330 + carT_ * 200;
+    }
+
+    // Day/night tint.
+    if (overlayNode_) {
+        overlayNode_->setColor(cachedOverlay_);
+    }
 }
 
 void Game2DScene::createShadowCasters(World* world) {
@@ -817,11 +806,27 @@ public:
     void load(World* world, ScriptSystem* script) override {
         (void)world;
         (void)script;
+
+        auto root = std::unique_ptr<GroupNode>(new GroupNode());
+        root->backgroundLayer(
+            RectNode(0.0f, 0.0f, 1280.0f, 720.0f,
+                     Color(0.08f, 0.08f, 0.12f)).setZ(0.0f),
+            RectNode(340.0f, 160.0f, 600.0f, 80.0f,
+                     Color(0.9f, 0.9f, 0.9f)).setZ(1.0f),
+            RectNode(440.0f, 560.0f, 400.0f, 6.0f,
+                     Color(0.7f, 0.7f, 0.7f)).setZ(2.0f),
+            RectNode(440.0f, 580.0f, 400.0f, 6.0f,
+                     Color(0.7f, 0.7f, 0.7f)).setZ(2.0f),
+            RectNode(440.0f, 600.0f, 280.0f, 6.0f,
+                     Color(0.7f, 0.7f, 0.7f)).setZ(2.0f)
+        );
+        setRootNode(std::move(root));
     }
 
     void unload(World* world, ScriptSystem* script) override {
         (void)world;
         (void)script;
+        setRootNode(nullptr);
     }
 
     void update(double dt) override {
@@ -845,22 +850,6 @@ public:
             fprintf(stderr, "[MENU] Starting 3D game\n");
             App::instance().getSceneManager()->setNext(new Game3DScene());
         }
-    }
-
-    void render(RenderList& list) override {
-        // Background
-        list.setFillColor(RenderLayer::Background, 0.0f, Color(0.08f, 0.08f, 0.12f));
-        list.fillRect(RenderLayer::Background, 0.0f, 0.0f, 0.0f, 1280.0f, 720.0f);
-
-        // Title bar
-        list.setFillColor(RenderLayer::Background, 1.0f, Color(0.9f, 0.9f, 0.9f));
-        list.fillRect(RenderLayer::Background, 1.0f, 340.0f, 160.0f, 600.0f, 80.0f);
-
-        // Hint bars representing "Press 1 or click for 2D, Press 2 or click for 3D"
-        list.setFillColor(RenderLayer::Background, 2.0f, Color(0.7f, 0.7f, 0.7f));
-        list.fillRect(RenderLayer::Background, 2.0f, 440.0f, 560.0f, 400.0f, 6.0f);
-        list.fillRect(RenderLayer::Background, 2.0f, 440.0f, 580.0f, 400.0f, 6.0f);
-        list.fillRect(RenderLayer::Background, 2.0f, 440.0f, 600.0f, 280.0f, 6.0f);
     }
 
 private:

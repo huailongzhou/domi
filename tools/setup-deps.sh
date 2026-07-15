@@ -45,21 +45,25 @@ SDL_ARCHIVE="SDL3-${SDL_VERSION}.tar.gz"
 SDL_SRC="SDL3-${SDL_VERSION}"
 SDL_URL="https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/${SDL_ARCHIVE}"
 
-if [ ! -d "$SDL_SRC" ]; then
-    download "$SDL_URL" "$SDL_ARCHIVE"
-    tar xzf "$SDL_ARCHIVE"
-fi
+if [ -f "$ROOT/sdl3/lib/libSDL3.dylib" ] || [ -f "$ROOT/sdl3/lib/libSDL3.so" ]; then
+    echo "[setup] SDL3 already installed, skipping"
+else
+    if [ ! -d "$SDL_SRC" ]; then
+        download "$SDL_URL" "$SDL_ARCHIVE"
+        tar xzf "$SDL_ARCHIVE"
+    fi
 
-mkdir -p sdl3-build
-cd sdl3-build
-cmake "../$SDL_SRC" \
-    -DCMAKE_INSTALL_PREFIX="$ROOT/sdl3" \
-    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-    -DSDL_EXAMPLES=OFF \
-    -DSDL_TESTS=OFF
-cmake --build . -j"$JOBS"
-cmake --install .
-cd ..
+    mkdir -p sdl3-build
+    cd sdl3-build
+    cmake "../$SDL_SRC" \
+        -DCMAKE_INSTALL_PREFIX="$ROOT/sdl3" \
+        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DSDL_EXAMPLES=OFF \
+        -DSDL_TESTS=OFF
+    cmake --build . -j"$JOBS"
+    cmake --install .
+    cd ..
+fi
 
 # ------------------------------------------------------------------
 # WAMR (iwasm)
@@ -68,23 +72,27 @@ WAMR_ARCHIVE="WAMR-${WAMR_VERSION}.tar.gz"
 WAMR_SRC="wasm-micro-runtime-WAMR-${WAMR_VERSION}"
 WAMR_URL="https://github.com/bytecodealliance/wasm-micro-runtime/archive/refs/tags/WAMR-${WAMR_VERSION}.tar.gz"
 
-if [ ! -d "$WAMR_SRC" ]; then
-    download "$WAMR_URL" "$WAMR_ARCHIVE"
-    tar xzf "$WAMR_ARCHIVE"
-fi
+if [ -f "$ROOT/wamr/lib/libiwasm.a" ]; then
+    echo "[setup] WAMR already installed, skipping"
+else
+    if [ ! -d "$WAMR_SRC" ]; then
+        download "$WAMR_URL" "$WAMR_ARCHIVE"
+        tar xzf "$WAMR_ARCHIVE"
+    fi
 
-mkdir -p wamr-build
-cd wamr-build
-cmake "../$WAMR_SRC/product-mini/platforms/${WAMR_PLATFORM}" \
-    -DCMAKE_INSTALL_PREFIX="$ROOT/wamr" \
-    -DWAMR_BUILD_PLATFORM="${WAMR_PLATFORM}" \
-    -DWAMR_BUILD_INTERP=1 \
-    -DWAMR_BUILD_FAST_INTERP=1 \
-    -DWAMR_BUILD_AOT=1 \
-    -DWAMR_BUILD_SIMD=0
-cmake --build . -j"$JOBS"
-cmake --install .
-cd ..
+    mkdir -p wamr-build
+    cd wamr-build
+    cmake "../$WAMR_SRC/product-mini/platforms/${WAMR_PLATFORM}" \
+        -DCMAKE_INSTALL_PREFIX="$ROOT/wamr" \
+        -DWAMR_BUILD_PLATFORM="${WAMR_PLATFORM}" \
+        -DWAMR_BUILD_INTERP=1 \
+        -DWAMR_BUILD_FAST_INTERP=1 \
+        -DWAMR_BUILD_AOT=1 \
+        -DWAMR_BUILD_SIMD=0
+    cmake --build . -j"$JOBS"
+    cmake --install .
+    cd ..
+fi
 
 # ------------------------------------------------------------------
 # FreeType
@@ -109,30 +117,36 @@ cmake "../$FREETYPE_SRC" \
     -DFT_DISABLE_BZIP2=ON \
     -DFT_DISABLE_PNG=ON \
     -DFT_DISABLE_HARFBUZZ=ON \
-    -DFT_DISABLE_BROTLI=ON
+    -DFT_DISABLE_BROTLI=ON \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build . -j"$JOBS"
 cmake --install .
 cd ..
 
-# MinGW build
-mkdir -p freetype-mingw-build
-cd freetype-mingw-build
-cmake "../$FREETYPE_SRC" \
-    -DCMAKE_INSTALL_PREFIX="$ROOT/freetype-mingw" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_SHARED_LIBS=OFF \
-    -DFT_DISABLE_ZLIB=ON \
-    -DFT_DISABLE_BZIP2=ON \
-    -DFT_DISABLE_PNG=ON \
-    -DFT_DISABLE_HARFBUZZ=ON \
-    -DFT_DISABLE_BROTLI=ON \
-    -DCMAKE_SYSTEM_NAME=Windows \
-    -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix \
-    -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
-    -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres
-cmake --build . -j"$JOBS"
-cmake --install .
-cd ..
+# MinGW build (optional; requires x86_64-w64-mingw32-gcc-posix)
+if command -v x86_64-w64-mingw32-gcc-posix >/dev/null 2>&1; then
+    mkdir -p freetype-mingw-build
+    cd freetype-mingw-build
+    cmake "../$FREETYPE_SRC" \
+        -DCMAKE_INSTALL_PREFIX="$ROOT/freetype-mingw" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DFT_DISABLE_ZLIB=ON \
+        -DFT_DISABLE_BZIP2=ON \
+        -DFT_DISABLE_PNG=ON \
+        -DFT_DISABLE_HARFBUZZ=ON \
+        -DFT_DISABLE_BROTLI=ON \
+        -DCMAKE_SYSTEM_NAME=Windows \
+        -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc-posix \
+        -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++-posix \
+        -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    cmake --build . -j"$JOBS"
+    cmake --install .
+    cd ..
+else
+    echo "[setup] Skipping FreeType MinGW build (x86_64-w64-mingw32-gcc-posix not found)"
+fi
 
 # ------------------------------------------------------------------
 # Default font asset

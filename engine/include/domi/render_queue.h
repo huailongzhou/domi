@@ -1,39 +1,39 @@
 #ifndef DOMI_RENDER_QUEUE_H
 #define DOMI_RENDER_QUEUE_H
 
-#include "domi/render_command.h"
 #include "domi/math.h"
+#include <functional>
 #include <vector>
 
 namespace domi {
 
 class IRenderBackend;
 
-// A lightweight queue of 2D render commands.
+// A lightweight queue of recorded backend operations.
 //
-// When the renderer is driven from WebAssembly, recording draw calls into a
-// queue and flushing them once per frame greatly reduces wasm-to-native
-// boundary crossings compared to immediate-mode rendering.
+// Canvas2D bakes its high-level primitives (paths, lines, materials) into
+// backend calls and records them here as plain callbacks. flush() replays
+// them against the backend in submission order. This is the same
+// record-a-callback mechanism that RenderList uses one level higher, so the
+// engine has a single command model instead of parallel command vocabularies.
 class RenderQueue {
 public:
     RenderQueue();
     ~RenderQueue();
 
+    using BackendOp = std::function<void(IRenderBackend*)>;
+
     void clear();
-    bool empty() const { return commands_.empty(); }
+    bool empty() const { return ops_.empty(); }
 
-    void setFillColor(const Color& c);
-    void setStrokeColor(const Color& c);
-    void setLineWidth(float w);
-
-    void fillRect(float x, float y, float w, float h);
-    void strokeRect(float x, float y, float w, float h);
-    void clearRect(float x, float y, float w, float h);
-    void drawLine(float x1, float y1, float x2, float y2);
-    void fillCircle(float x, float y, float radius, int segments);
+    // Record-time paint state. Captured by the ops recorded afterwards.
+    void setFillColor(const Color& c) { currentFillColor_ = c; }
+    void setStrokeColor(const Color& c) { currentStrokeColor_ = c; }
+    void setLineWidth(float w) { currentLineWidth_ = w; }
 
     void fillPath(const std::vector<Vec2>& points, bool closed);
     void strokePath(const std::vector<Vec2>& points, bool closed);
+    void drawLine(float x1, float y1, float x2, float y2);
 
     // Enqueue a material draw using a backend-cached texture handle.
     // The handle must have been obtained from IRenderBackend::uploadMaterial().
@@ -42,21 +42,18 @@ public:
                       float angle, float centerX, float centerY,
                       float scaleX, float scaleY);
 
-    // Execute all queued commands against the backend and clear the queue.
+    // Low-level: record a pre-built backend operation.
+    void push(BackendOp op) { ops_.push_back(std::move(op)); }
+
+    // Execute all queued operations against the backend and clear the queue.
     void flush(IRenderBackend* backend);
 
 private:
-    std::vector<RenderCommand> commands_;
-    std::vector<StoredPath> paths_;
+    std::vector<BackendOp> ops_;
 
     Color currentFillColor_;
     Color currentStrokeColor_;
     float currentLineWidth_;
-
-    void pushPathCommand(RenderCommand::Type type,
-                         const std::vector<Vec2>& points, bool closed);
-    static void renderPath(IRenderBackend* backend, const StoredPath& path,
-                           const Color& color, bool fill, float lineWidth);
 };
 
 } // namespace domi
