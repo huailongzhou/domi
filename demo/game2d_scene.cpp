@@ -17,13 +17,16 @@
 #include "horizon_generator.h"
 #include "3d/cube3d_generator.h"
 #include "3d/car3d_generator.h"
+#include <cmath>
 #include <cstdio>
 
 using namespace domi;
 
-// Out-of-line definition required by C++11 when kHorizonY is ODR-used
+// Out-of-line definitions required by C++11 when these constants are ODR-used
 // (e.g. bound to a forwarding reference in GroupNode::addChild).
 constexpr float Game2DScene::kHorizonY;
+constexpr float Game2DScene::kWorldWidth;
+constexpr float Game2DScene::kWorldHeight;
 
 namespace {
 
@@ -69,16 +72,18 @@ const CloudDef kClouds[] = {
     {  150.0f, 100.0f, 1.0f },
     {  450.0f,  80.0f, 0.7f },
     {  800.0f, 130.0f, 1.2f },
-    {  250.0f, 170.0f, 0.5f },
-    {  650.0f, 200.0f, 0.9f },
-    { 1050.0f, 230.0f, 1.1f },
+    { 1250.0f, 170.0f, 0.5f },
+    { 1700.0f, 200.0f, 0.9f },
+    { 2200.0f, 230.0f, 1.1f },
 };
 const int kCloudCount = sizeof(kClouds) / sizeof(kClouds[0]);
 
 struct TreeDef { float x; float y; }; // sort z = trunk bottom (y + 40)
 const TreeDef kTrees[] = {
-    { 180.0f, 320.0f }, { 940.0f, 290.0f }, { 820.0f, 460.0f },
-    { 220.0f, 560.0f }, { 840.0f, 600.0f },
+    {  180.0f, 320.0f }, {  940.0f, 290.0f }, {  820.0f, 460.0f },
+    {  220.0f, 560.0f }, {  840.0f, 600.0f }, { 1300.0f, 620.0f },
+    { 1500.0f, 350.0f }, { 1750.0f, 520.0f }, { 2050.0f, 300.0f },
+    { 2350.0f, 580.0f },
 };
 const int kTreeCount = sizeof(kTrees) / sizeof(kTrees[0]);
 
@@ -95,6 +100,8 @@ Game2DScene::Game2DScene()
       carNode_(nullptr), overlayNode_(nullptr) {}
 
 void Game2DScene::update(double dt) {
+    updateCamera();
+
     carT_ += carSpeed_ * dt;
     if (carT_ > 1.0f) carT_ = 0.0f;
 
@@ -124,6 +131,72 @@ void Game2DScene::update(double dt) {
         useZBuffer_ = !useZBuffer_;
         fprintf(stderr, "[GAME2D] Render mode: %s\n",
                 useZBuffer_ ? "z-buffer" : "painter");
+    }
+}
+
+// Mouse-driven viewport control: left-drag pans, wheel zooms toward the
+// cursor, Home resets. Transform convention: screen = world * zoom + offset.
+// The viewport is clamped so it never leaves the world bounds.
+void Game2DScene::updateCamera() {
+    InputSystem* input = App::instance().getInput();
+    if (!input) return;
+
+    // Left-drag pans the viewport (screen-space, 1:1).
+    if (input->isMouseButtonDown(1)) {
+        camera_.offsetX += input->getMouseDeltaX();
+        camera_.offsetY += input->getMouseDeltaY();
+    }
+
+    // Mouse wheel zooms toward the cursor position: keep the world point
+    // under the cursor fixed, i.e. offset' = m - (m - offset) * (zoom'/zoom).
+    float scroll = input->getScrollY();
+    if (scroll != 0.0f) {
+        // Never zoom out further than "world exactly fills the window".
+        float minZoom = 1280.0f / kWorldWidth;
+        if (720.0f / kWorldHeight > minZoom) minZoom = 720.0f / kWorldHeight;
+
+        const float oldZoom = camera_.zoom;
+        float newZoom = oldZoom * std::pow(1.15f, scroll);
+        if (newZoom < minZoom) newZoom = minZoom;
+        if (newZoom > 4.0f) newZoom = 4.0f;
+
+        float mx = input->getMouseX();
+        float my = input->getMouseY();
+        camera_.offsetX = mx - (mx - camera_.offsetX) * (newZoom / oldZoom);
+        camera_.offsetY = my - (my - camera_.offsetY) * (newZoom / oldZoom);
+        camera_.zoom = newZoom;
+    }
+
+    // Home resets the viewport.
+    if (input->isKeyPressed(SDL_SCANCODE_HOME)) {
+        camera_ = Camera2D();
+    }
+
+    clampCamera();
+}
+
+// Keep the viewport inside the world:
+//   visible world rect = [(0-offset)/zoom, (screen-offset)/zoom]
+// must stay within [0, kWorldWidth] x [0, kWorldHeight]. When the world is
+// smaller than the window at the current zoom, center it instead.
+void Game2DScene::clampCamera() {
+    const float screenW = 1280.0f;
+    const float screenH = 720.0f;
+    const float viewW = kWorldWidth * camera_.zoom;
+    const float viewH = kWorldHeight * camera_.zoom;
+
+    if (viewW >= screenW) {
+        if (camera_.offsetX > 0.0f) camera_.offsetX = 0.0f;
+        if (camera_.offsetX < screenW - viewW) camera_.offsetX = screenW - viewW;
+    } else {
+        camera_.offsetX = (screenW - viewW) * 0.5f;
+    }
+
+    if (viewH >= screenH) {
+        if (camera_.offsetY > 0.0f) camera_.offsetY = 0.0f;
+        if (camera_.offsetY < screenH - viewH) camera_.offsetY = screenH - viewH;
+    } else {
+        camera_.offsetY = (screenH - viewH) * 0.5f;
     }
 }
 
@@ -188,7 +261,7 @@ void Game2DScene::load(World* world, ScriptSystem* script) {
     }
 
     HorizonGenerator horizonGen;
-    horizonGen.setSize(1280, 120)
+    horizonGen.setSize(static_cast<int>(kWorldWidth), 120)
         .setFormat(PixelFormat::ARGB8888)
         .setSeed(5000u)
         .setBaseColor(Color(0.28f, 0.72f, 0.28f, 1.0f))
@@ -235,16 +308,17 @@ void Game2DScene::buildRenderTree() {
     // (top y~330).
     LayerView& ground = root->groundLayer();
     ground.addChild<RectNode>(
-        0.0f, kHorizonY, 1280.0f, 480.0f, Color(0.28f, 0.72f, 0.28f)).sortByTop();
+        0.0f, kHorizonY, kWorldWidth, kWorldHeight - kHorizonY,
+        Color(0.28f, 0.72f, 0.28f)).sortByTop();
     ground.addChild<PathNode>()
         .fillColor(Color(0.18f, 0.48f, 0.78f, 1.0f))
         .strokeColor(Color(0.45f, 0.72f, 0.95f, 1.0f))
         .lineWidth(3.0f)
-        .moveTo(850.0f, 360.0f)
-        .quadraticCurveTo(1050.0f, 330.0f, 1240.0f, 410.0f)
-        .quadraticCurveTo(1300.0f, 540.0f, 1220.0f, 670.0f)
-        .quadraticCurveTo(1020.0f, 710.0f, 860.0f, 640.0f)
-        .quadraticCurveTo(790.0f, 510.0f, 850.0f, 360.0f)
+        .moveTo(1850.0f, 360.0f)
+        .quadraticCurveTo(2050.0f, 330.0f, 2240.0f, 410.0f)
+        .quadraticCurveTo(2300.0f, 540.0f, 2220.0f, 670.0f)
+        .quadraticCurveTo(2020.0f, 710.0f, 1860.0f, 640.0f)
+        .quadraticCurveTo(1790.0f, 510.0f, 1850.0f, 360.0f)
         .closePath()
         .sortByTop();
 
@@ -257,24 +331,25 @@ void Game2DScene::buildRenderTree() {
         .fillColor(Color(0.35f, 0.35f, 0.35f))
         .moveTo(-121.0f, 300.0f)
         .lineTo(-79.0f, 360.0f)
-        .lineTo(1401.0f, 560.0f)
-        .lineTo(1359.0f, 500.0f)
+        .lineTo(kWorldWidth + 121.0f, 790.0f)
+        .lineTo(kWorldWidth + 79.0f, 730.0f)
         .closePath()
         .sortByTop();
     CustomNode& shadows = surface.addChild<CustomNode>(
         [this](DrawBatch& batch) { drawGroundShadows(batch); });
     shadows.z = 562.0f;
     // Dashed yellow center line: one LineNode per dash, sorted by bottom y.
-    for (int i = 0; i < 12; ++i) {
-        float t0 = i / 12.0f;
-        float t1 = (i + 0.5f) / 12.0f;
+    const int dashCount = 24;
+    for (int i = 0; i < dashCount; ++i) {
+        float t0 = i / (float)dashCount;
+        float t1 = (i + 0.5f) / (float)dashCount;
         surface.addChild<LineNode>(
-            -100 + t0 * 1480, 330 + t0 * 200,
-            -100 + t1 * 1480, 330 + t1 * 200,
+            -100 + t0 * (kWorldWidth + 200.0f), 330 + t0 * 400.0f,
+            -100 + t1 * (kWorldWidth + 200.0f), 330 + t1 * 400.0f,
             Color(0.9f, 0.85f, 0.3f)).lineWidth(4.0f).sortByBottom();
     }
 
-    // Object layer: trees, house, rocks, and the 3D car.
+    // Object layer: trees, houses, rocks, and the 3D car.
     // Sprites sort by their bottom edge; the car's z is animated per frame.
     LayerView& object = root->objectLayer();
     for (int i = 0; i < kTreeCount; ++i) {
@@ -286,13 +361,16 @@ void Game2DScene::buildRenderTree() {
         node.scale = perspectiveScale(kTrees[i].y);
     }
     object.addChild<MaterialNode>(houseMaterial_, 560.0f, 360.0f, true).sortByBottom();
+    object.addChild<MaterialNode>(houseMaterial_, 2100.0f, 480.0f, true).sortByBottom();
     object.addChild<MaterialNode>(rockMaterials_[0], 420.0f, 380.0f, true).sortByBottom();
     object.addChild<MaterialNode>(rockMaterials_[1], 460.0f, 400.0f, true).sortByBottom();
     object.addChild<MaterialNode>(rockMaterials_[2], 720.0f, 540.0f, true).sortByBottom();
     object.addChild<MaterialNode>(rockMaterials_[3], 760.0f, 560.0f, true).sortByBottom();
+    object.addChild<MaterialNode>(rockMaterials_[0], 1450.0f, 430.0f, true).sortByBottom();
+    object.addChild<MaterialNode>(rockMaterials_[1], 1950.0f, 610.0f, true).sortByBottom();
     carNode_ = &object.addChild<CustomNode>([this](DrawBatch& batch) {
-        float cx = -100 + carT_ * 1480;
-        float cy = 330 + carT_ * 200;
+        float cx = -100 + carT_ * (kWorldWidth + 200.0f);
+        float cy = 330 + carT_ * 400.0f;
         batch.setRenderMode(useZBuffer_ ? RenderMode::ZBUFFER : RenderMode::PAINTER);
         batch.begin3D();
         draw3DCar(batch, cx, cy);
@@ -330,7 +408,7 @@ void Game2DScene::updateRenderNodes() {
 
     // The car's z follows its screen y so it sorts correctly with other objects.
     if (carNode_) {
-        carNode_->z = 330 + carT_ * 200;
+        carNode_->z = 330 + carT_ * 400.0f;
     }
 
     // Day/night tint.
@@ -533,8 +611,9 @@ void Game2DScene::drawGroundShadows(DrawBatch& batch) {
                                   32.0f * s, 10.0f * s, 0.0f,
                                   shadowDir);
     }
-    SceneFunction::drawShadow(batch, 560,  360, 48.0f, 16.0f, 45.0f, shadowDir);
-    SceneFunction::drawShadow(batch, 1050, 520, 34.0f, 12.0f, 30.0f, shadowDir);
+    SceneFunction::drawShadow(batch,  560,  360, 48.0f, 16.0f, 45.0f, shadowDir);
+    SceneFunction::drawShadow(batch, 2100,  480, 48.0f, 16.0f, 45.0f, shadowDir);
+    SceneFunction::drawShadow(batch, 1050,  520, 34.0f, 12.0f, 30.0f, shadowDir);
 }
 
 void Game2DScene::draw3DCar(DrawBatch& batch, float x, float y) {

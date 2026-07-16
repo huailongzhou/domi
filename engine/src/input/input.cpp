@@ -64,6 +64,14 @@ float InputSystem::getMouseDeltaY() const {
     return backend_ ? backend_->getMouseDeltaY() : 0;
 }
 
+float InputSystem::getScrollX() const {
+    return backend_ ? backend_->getScrollX() : 0;
+}
+
+float InputSystem::getScrollY() const {
+    return backend_ ? backend_->getScrollY() : 0;
+}
+
 float InputSystem::getAxis(const char* name) const {
     return backend_ ? backend_->getAxis(name) : 0;
 }

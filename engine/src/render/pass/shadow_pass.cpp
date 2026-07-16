@@ -1,6 +1,8 @@
 #include "domi/pass/shadow_pass.h"
 #include "domi/render_command_buffer.h"
 #include "domi/render_texture.h"
+#include "domi/camera2d.h"
+#include "domi/canvas2d.h"
 #include "domi/ecs.h"
 #include "domi/component.h"
 #include <vector>
@@ -42,7 +44,17 @@ void ShadowPass::record(CommandBuffer& cmd, RenderContext& ctx) {
     float groundY = ctx.height * (1.0f / 3.0f);
 
     // Project a shadow from each shadow-casting sprite onto the ground.
+    // The projection happens in world space, so it renders under the same
+    // 2D camera as the geometry pass.
     if (ctx.world) {
+        Canvas2D* canvas = cmd.getCanvas();
+        bool camActive = canvas && ctx.camera2D;
+        if (camActive) {
+            canvas->save();
+            canvas->translate(ctx.camera2D->offsetX, ctx.camera2D->offsetY);
+            canvas->scale(ctx.camera2D->zoom, ctx.camera2D->zoom);
+        }
+
         std::vector<Entity> entities = ctx.world->queryEntitiesWith(
             ComponentTypeMask().withTransform().withSprite());
         for (size_t i = 0; i < entities.size(); ++i) {
@@ -57,6 +69,10 @@ void ShadowPass::record(CommandBuffer& cmd, RenderContext& ctx) {
             Vec2 pos(t->transform.position.x, t->transform.position.y);
             float radius = 40.0f * t->transform.scale.x;
             drawOccluderShadow(cmd, pos, radius, shadowDir, groundY);
+        }
+
+        if (camActive) {
+            canvas->restore();
         }
     }
 }

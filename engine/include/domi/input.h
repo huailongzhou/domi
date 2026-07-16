@@ -28,6 +28,10 @@ public:
     float getMouseDeltaX() const;
     float getMouseDeltaY() const;
 
+    // Mouse wheel scroll for the current frame.
+    float getScrollX() const;
+    float getScrollY() const;
+
     float getAxis(const char* name) const;
 
 private:

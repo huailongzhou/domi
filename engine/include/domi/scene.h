@@ -13,6 +13,7 @@ class RenderList;
 class RenderNode;
 class UIView;
 class UIContext;
+struct Camera2D;
 
 // A Scene is a self-contained collection of entities/components.
 // Derive from this class and override load/unload to build your level.
@@ -49,6 +50,10 @@ public:
     // UIPass will render this view tree on top of the composited frame.
     virtual UIView* getUIRoot() { return nullptr; }
     virtual UIContext* getUIContext() { return nullptr; }
+
+    // Optional 2D viewport camera. When non-null, world-space passes
+    // (Geometry/Shadow/Lighting) render through this transform.
+    virtual const Camera2D* getCamera2D() const { return nullptr; }
 
 private:
     std::unique_ptr<RenderNode> rootNode_;

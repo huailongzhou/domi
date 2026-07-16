@@ -9,6 +9,7 @@ class RenderTexture;
 class World;
 class UIView;
 class UIContext;
+struct Camera2D;
 struct CameraComponent;
 struct LightComponent;
 
@@ -23,6 +24,10 @@ struct RenderContext {
     World* world = NULL;
     CameraComponent* camera = NULL;
     LightComponent* sun = NULL; // directional / global light
+
+    // Optional 2D viewport camera supplied by the active scene. World-space
+    // passes apply it; screen-space layers (Overlay and above) ignore it.
+    const Camera2D* camera2D = NULL;
 
     // Declarative UI overlay supplied by the active scene.
     UIView* uiRoot = NULL;

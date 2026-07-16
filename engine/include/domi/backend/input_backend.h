@@ -32,6 +32,10 @@ public:
     virtual float getMouseDeltaX() const = 0;
     virtual float getMouseDeltaY() const = 0;
 
+    // Mouse wheel scroll for the current frame (reset each update()).
+    virtual float getScrollX() const = 0;
+    virtual float getScrollY() const = 0;
+
     virtual float getAxis(const char* name) const = 0;
 };
 

@@ -14,6 +14,7 @@ class Canvas2D;
 class DrawBatch;
 class Font;
 class RenderTexture;
+struct Camera2D;
 
 // A declarative deferred 2D draw list.
 // Scenes record draw calls with a layer and a z/sort key. The engine commits
@@ -98,6 +99,11 @@ public:
     // layer and z, which matters for state changes (fill/stroke colors) that
     // must execute in the order they were recorded.
     void flush(Canvas2D* canvas);
+
+    // Same as flush(), but items in layers up to worldUpTo (inclusive) are
+    // drawn under the given 2D camera transform; later layers (Overlay, UI)
+    // stay in screen space. Passing NULL behaves like flush(canvas).
+    void flush(Canvas2D* canvas, const Camera2D* camera, RenderLayer worldUpTo);
 
     size_t size() const { return items_.size(); }
 

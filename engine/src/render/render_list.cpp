@@ -1,5 +1,6 @@
 #include "domi/render_list.h"
 #include "domi/canvas2d.h"
+#include "domi/camera2d.h"
 #include "domi/draw_batch.h"
 #include "domi/render_texture.h"
 #include <algorithm>
@@ -168,16 +169,42 @@ void RenderList::resetClipRect(RenderLayer layer, float z) {
 }
 
 void RenderList::flush(Canvas2D* canvas) {
+    flush(canvas, NULL, RenderLayer::UI);
+}
+
+void RenderList::flush(Canvas2D* canvas, const Camera2D* camera, RenderLayer worldUpTo) {
     std::stable_sort(items_.begin(), items_.end(), [](const Item& a, const Item& b) {
         if (a.layer != b.layer) {
             return static_cast<int>(a.layer) < static_cast<int>(b.layer);
         }
         return a.z < b.z;
     });
+
+    bool camActive = camera &&
+        (camera->offsetX != 0.0f || camera->offsetY != 0.0f || camera->zoom != 1.0f);
+    bool transformed = false;
+    if (camActive) {
+        canvas->save();
+        canvas->translate(camera->offsetX, camera->offsetY);
+        canvas->scale(camera->zoom, camera->zoom);
+        transformed = true;
+    }
+
     for (size_t i = 0; i < items_.size(); ++i) {
+        // Layers above worldUpTo are screen-space: pop the camera transform
+        // before replaying them. Since items are layer-sorted this happens
+        // at most once.
+        if (transformed && static_cast<int>(items_[i].layer) > static_cast<int>(worldUpTo)) {
+            canvas->restore();
+            transformed = false;
+        }
         if (items_[i].fn) {
             items_[i].fn(canvas);
         }
+    }
+
+    if (transformed) {
+        canvas->restore();
     }
 }
 

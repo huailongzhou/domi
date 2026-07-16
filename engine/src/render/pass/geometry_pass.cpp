@@ -3,6 +3,7 @@
 #include "domi/render_texture.h"
 #include "domi/render_list.h"
 #include "domi/scene_manager.h"
+#include "domi/camera2d.h"
 #include "domi/canvas2d.h"
 #include "domi/ecs.h"
 #include "domi/component.h"
@@ -21,6 +22,17 @@ void GeometryPass::record(CommandBuffer& cmd, RenderContext& ctx) {
     // Clear to a default sky/ground color. The scene can overwrite this.
     cmd.setFillColor(Color(0.12f, 0.12f, 0.16f, 1.0f));
     cmd.fillRect(0, 0, (float)ctx.width, (float)ctx.height);
+
+    Canvas2D* canvas = cmd.getCanvas();
+
+    // ECS sprites live in world space: draw them under the 2D camera if the
+    // active scene provides one.
+    bool camActive = canvas && ctx.camera2D;
+    if (camActive) {
+        canvas->save();
+        canvas->translate(ctx.camera2D->offsetX, ctx.camera2D->offsetY);
+        canvas->scale(ctx.camera2D->zoom, ctx.camera2D->zoom);
+    }
 
     // Draw ECS sprites.
     std::vector<Entity> entities = ctx.world->queryEntitiesWith(
@@ -44,14 +56,17 @@ void GeometryPass::record(CommandBuffer& cmd, RenderContext& ctx) {
         cmd.fillRect(x, y, w, h);
     }
 
-    // Let the active Scene record declarative draw commands on top.
-    if (sceneManager_) {
-        Canvas2D* canvas = cmd.getCanvas();
-        if (canvas) {
-            RenderList list;
-            sceneManager_->render(list);
-            list.flush(canvas);
-        }
+    if (camActive) {
+        canvas->restore();
+    }
+
+    // Let the active Scene record declarative draw commands on top. World
+    // layers (up to Effect) render under the 2D camera; Overlay stays
+    // screen-space.
+    if (sceneManager_ && canvas) {
+        RenderList list;
+        sceneManager_->render(list);
+        list.flush(canvas, ctx.camera2D, RenderLayer::Effect);
     }
 }
 

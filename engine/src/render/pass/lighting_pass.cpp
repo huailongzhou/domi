@@ -1,6 +1,8 @@
 #include "domi/pass/lighting_pass.h"
 #include "domi/render_command_buffer.h"
 #include "domi/render_texture.h"
+#include "domi/camera2d.h"
+#include "domi/canvas2d.h"
 #include "domi/ecs.h"
 #include "domi/component.h"
 #include <vector>
@@ -19,7 +21,15 @@ void LightingPass::record(CommandBuffer& cmd, RenderContext& ctx) {
 
     if (!ctx.world) return;
 
-    // Additively draw point lights.
+    // Additively draw point lights (world space, under the 2D camera).
+    Canvas2D* canvas = cmd.getCanvas();
+    bool camActive = canvas && ctx.camera2D;
+    if (camActive) {
+        canvas->save();
+        canvas->translate(ctx.camera2D->offsetX, ctx.camera2D->offsetY);
+        canvas->scale(ctx.camera2D->zoom, ctx.camera2D->zoom);
+    }
+
     std::vector<Entity> entities = ctx.world->queryEntitiesWith(
         ComponentTypeMask().withLight().withTransform());
 
@@ -32,6 +42,10 @@ void LightingPass::record(CommandBuffer& cmd, RenderContext& ctx) {
         Vec2 pos(t->transform.position.x, t->transform.position.y);
         float radius = 120.0f * t->transform.scale.x;
         drawPointLight(cmd, pos, radius, l->color, l->intensity);
+    }
+
+    if (camActive) {
+        canvas->restore();
     }
 }
 

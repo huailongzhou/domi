@@ -531,10 +531,17 @@ void Canvas2D::fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
                               float za, float zb, float zc, const Color& color) {
     if (!in3D_ || !lockedPixels_) return;
 
-    float minX = std::min(std::min(a.x, b.x), c.x);
-    float minY = std::min(std::min(a.y, b.y), c.y);
-    float maxX = std::max(std::max(a.x, b.x), c.x);
-    float maxY = std::max(std::max(a.y, b.y), c.y);
+    // The software rasterizer writes pixels directly, so the current 2D
+    // transform (viewport camera, save/scale stacks) must be applied here —
+    // otherwise 3D content would ignore the transform the 2D path honors.
+    Vec2 ta = state_.transform * a;
+    Vec2 tb = state_.transform * b;
+    Vec2 tc = state_.transform * c;
+
+    float minX = std::min(std::min(ta.x, tb.x), tc.x);
+    float minY = std::min(std::min(ta.y, tb.y), tc.y);
+    float maxX = std::max(std::max(ta.x, tb.x), tc.x);
+    float maxY = std::max(std::max(ta.y, tb.y), tc.y);
 
     if (maxX < 0.0f || maxY < 0.0f || minX >= width_ || minY >= height_) return;
     if (minX < 0.0f) minX = 0.0f;
@@ -542,8 +549,8 @@ void Canvas2D::fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
     if (maxX >= width_) maxX = width_ - 1;
     if (maxY >= height_) maxY = height_ - 1;
 
-    Vec3 v0(c.x - a.x, c.y - a.y, 0.0f);
-    Vec3 v1(b.x - a.x, b.y - a.y, 0.0f);
+    Vec3 v0(tc.x - ta.x, tc.y - ta.y, 0.0f);
+    Vec3 v1(tb.x - ta.x, tb.y - ta.y, 0.0f);
     float dot00 = Vec3::dot(v0, v0);
     float dot01 = Vec3::dot(v0, v1);
     float dot11 = Vec3::dot(v1, v1);
@@ -558,7 +565,7 @@ void Canvas2D::fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
     for (int y = (int)minY; y <= (int)maxY; ++y) {
         uint8_t* row = (uint8_t*)lockedPixels_ + y * lockedPitch_;
         for (int x = (int)minX; x <= (int)maxX; ++x) {
-            Vec3 v2((float)x - a.x, (float)y - a.y, 0.0f);
+            Vec3 v2((float)x - ta.x, (float)y - ta.y, 0.0f);
             float dot20 = Vec3::dot(v0, v2);
             float dot21 = Vec3::dot(v1, v2);
             float gamma = (dot11 * dot20 - dot01 * dot21) / denom;

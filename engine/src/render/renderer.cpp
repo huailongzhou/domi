@@ -119,6 +119,7 @@ void Renderer::render(World* world, SceneManager* sceneManager, float fps) {
     ctx.sun = findDirectionalLight(world);
     ctx.uiRoot = scene ? scene->getUIRoot() : NULL;
     ctx.uiContext = scene ? scene->getUIContext() : NULL;
+    ctx.camera2D = scene ? scene->getCamera2D() : NULL;
     ctx.fps = fps;
     ctx.width = width_;
     ctx.height = height_;

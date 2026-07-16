@@ -100,6 +100,8 @@ public:
     float getMouseY() const override { return mouseY_; }
     float getMouseDeltaX() const override { return mouseDeltaX_; }
     float getMouseDeltaY() const override { return mouseDeltaY_; }
+    float getScrollX() const override { return scrollX_; }
+    float getScrollY() const override { return scrollY_; }
     float getAxis(const char* name) const override;
 
     // IAudioBackend (init/shutdown shared with IInputBackend)
