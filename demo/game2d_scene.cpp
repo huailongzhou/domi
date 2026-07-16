@@ -8,6 +8,7 @@
 #include "domi/render_layer.h"
 #include "domi/render_list.h"
 #include "domi/render_node.h"
+#include "domi/scene_loader.h"
 #include "domi/scene_function.h"
 #include "second_scene.h"
 #include "tree_generator.h"
@@ -64,28 +65,10 @@ public:
     }
 };
 
-// Scene layout data: the single source of truth for object placement.
-// buildRenderTree(), updateRenderNodes(), updateCloudShadowCasters() and
-// drawGroundShadows() all read from these tables.
-struct CloudDef { float baseX; float y; float speed; }; // sort z = y
-const CloudDef kClouds[] = {
-    {  150.0f, 100.0f, 1.0f },
-    {  450.0f,  80.0f, 0.7f },
-    {  800.0f, 130.0f, 1.2f },
-    { 1250.0f, 170.0f, 0.5f },
-    { 1700.0f, 200.0f, 0.9f },
-    { 2200.0f, 230.0f, 1.1f },
-};
-const int kCloudCount = sizeof(kClouds) / sizeof(kClouds[0]);
-
-struct TreeDef { float x; float y; }; // sort z = trunk bottom (y + 40)
-const TreeDef kTrees[] = {
-    {  180.0f, 320.0f }, {  940.0f, 290.0f }, {  820.0f, 460.0f },
-    {  220.0f, 560.0f }, {  840.0f, 600.0f }, { 1300.0f, 620.0f },
-    { 1500.0f, 350.0f }, { 1750.0f, 520.0f }, { 2050.0f, 300.0f },
-    { 2350.0f, 580.0f },
-};
-const int kTreeCount = sizeof(kTrees) / sizeof(kTrees[0]);
+// How many cloud/tree sprite variants to pre-generate. Placements (which
+// variant goes where) live in assets/scenes/game2d.json.
+const int kCloudMaterialCount = 6;
+const int kTreeMaterialCount = 10;
 
 } // namespace
 
@@ -210,7 +193,7 @@ void Game2DScene::load(World* world, ScriptSystem* script) {
     // scene looks varied instead of repeating the same sprite.
     treeTrunks_.clear();
     treeFoliages_.clear();
-    for (int i = 0; i < kTreeCount; ++i) {
+    for (int i = 0; i < kTreeMaterialCount; ++i) {
         Material trunk, foliage;
         TreeGenerator()
             .setSize(80, 80)
@@ -249,7 +232,7 @@ void Game2DScene::load(World* world, ScriptSystem* script) {
         .build();
 
     cloudMaterials_.clear();
-    for (int i = 0; i < kCloudCount; ++i) {
+    for (int i = 0; i < kCloudMaterialCount; ++i) {
         cloudMaterials_.push_back(CloudGenerator()
             .setSize(120, 80)
             .setFormat(PixelFormat::ARGB8888)
@@ -272,14 +255,18 @@ void Game2DScene::load(World* world, ScriptSystem* script) {
     horizonMaterial_ = horizonGen.build();
     horizonSkyline_ = horizonGen.buildSkyline();
 
-    createShadowCasters(world);
+    // buildRenderTree() fills the cloud layout from the scene file, which
+    // createShadowCasters() depends on — keep this order.
     buildRenderTree();
+    createShadowCasters(world);
 }
 
 void Game2DScene::unload(World* world, ScriptSystem* script) {
     (void)script;
     setRootNode(nullptr);
+    clouds_.clear();
     cloudNodes_.clear();
+    treeNodes_.clear();
     carNode_ = nullptr;
     overlayNode_ = nullptr;
     if (world) world->clear();
@@ -288,57 +275,88 @@ void Game2DScene::unload(World* world, ScriptSystem* script) {
 }
 
 void Game2DScene::buildRenderTree() {
-    std::unique_ptr<GroupNode> root(new GroupNode());
+    // Static layout (horizon, clouds, grass, lake, road, trees, houses,
+    // rocks) comes from the scene file. Materials are resolved by name from
+    // the vectors generated in load().
+    SceneLoader loader;
+    loader.setMaterialResolver([this](const std::string& name) -> const Material* {
+        if (name == "horizon") return &horizonMaterial_;
+        if (name == "house")   return &houseMaterial_;
+        int idx = -1;
+        if (sscanf(name.c_str(), "cloud%d", &idx) == 1 &&
+            idx >= 0 && idx < (int)cloudMaterials_.size()) return &cloudMaterials_[idx];
+        if (sscanf(name.c_str(), "trunk%d", &idx) == 1 &&
+            idx >= 0 && idx < (int)treeTrunks_.size()) return &treeTrunks_[idx];
+        if (sscanf(name.c_str(), "foliage%d", &idx) == 1 &&
+            idx >= 0 && idx < (int)treeFoliages_.size()) return &treeFoliages_[idx];
+        if (sscanf(name.c_str(), "rock%d", &idx) == 1 &&
+            idx >= 0 && idx < (int)rockMaterials_.size()) return &rockMaterials_[idx];
+        fprintf(stderr, "[GAME2D] Unknown material '%s'\n", name.c_str());
+        return nullptr;
+    });
+    // Demo node types registered with the loader:
+    // - "cloud": drifts along a fixed y with its own speed; also registers a
+    //   shadow caster slot and an animation slot.
+    loader.registerType("cloud", [this](const nlohmann::json& j, const SceneLoader& l)
+            -> std::unique_ptr<RenderNode> {
+        const Material* material = l.resolveMaterial(j.value("material", ""));
+        if (!material) return nullptr;
+        CloudDef def;
+        def.baseX = j.value("x", 0.0f);
+        def.y     = j.value("y", 0.0f);
+        def.speed = j.value("speed", 1.0f);
+        clouds_.push_back(def);
+        std::unique_ptr<MaterialNode> node(
+            new MaterialNode(*material, def.baseX, def.y, true));
+        node->sortByCenterY();
+        cloudNodes_.push_back(node.get());
+        return node;
+    });
+    // - "tree": trunk + foliage sprite pair, scaled by perspective.
+    loader.registerType("tree", [this](const nlohmann::json& j, const SceneLoader& l)
+            -> std::unique_ptr<RenderNode> {
+        std::unique_ptr<TreeNode> node(new TreeNode());
+        node->trunk   = l.resolveMaterial(j.value("trunk", ""));
+        node->foliage = l.resolveMaterial(j.value("foliage", ""));
+        node->x = j.value("x", 0.0f);
+        node->y = j.value("y", 0.0f);
+        node->scale = perspectiveScale(node->y);
+        treeNodes_.push_back(node.get());
+        return node;
+    });
 
-    // Background layer: horizon and clouds. No explicit z values — every
-    // node derives its sort key from its own y range. The horizon sorts by
-    // its bottom edge (y=240); clouds sort by their center y (80..230), so
-    // clouds always draw before the hills in front of them.
-    LayerView& background = root->backgroundLayer();
-    background.addChild<MaterialNode>(horizonMaterial_, 0.0f, 120.0f).sortByBottom();
+    clouds_.clear();
     cloudNodes_.clear();
-    for (int i = 0; i < kCloudCount; ++i) {
-        MaterialNode& node = background.addChild<MaterialNode>(
-            cloudMaterials_[i], 0.0f, 0.0f, true);
-        node.sortByCenterY();
-        cloudNodes_.push_back(&node);
+    treeNodes_.clear();
+
+    // Locate the scene file regardless of the directory the game was
+    // started from (project root, build/, ...).
+    const char* kSceneCandidates[] = {
+        "assets/scenes/game2d.json",
+        "../assets/scenes/game2d.json",
+        "../../assets/scenes/game2d.json",
+    };
+    std::unique_ptr<GroupNode> root;
+    for (size_t i = 0; i < sizeof(kSceneCandidates) / sizeof(kSceneCandidates[0]); ++i) {
+        FILE* f = fopen(kSceneCandidates[i], "r");
+        if (!f) continue;
+        fclose(f);
+        root = loader.load(kSceneCandidates[i]);
+        break;
+    }
+    if (!root) {
+        fprintf(stderr, "[GAME2D] Scene file missing, using an empty layout\n");
+        root.reset(new GroupNode());
     }
 
-    // Ground layer: grass first (top y=240), then the lake on top of it
-    // (top y~330).
-    LayerView& ground = root->groundLayer();
-    ground.addChild<RectNode>(
-        0.0f, kHorizonY, kWorldWidth, kWorldHeight - kHorizonY,
-        Color(0.28f, 0.72f, 0.28f)).sortByTop();
-    ground.addChild<PathNode>()
-        .fillColor(Color(0.18f, 0.48f, 0.78f, 1.0f))
-        .strokeColor(Color(0.45f, 0.72f, 0.95f, 1.0f))
-        .lineWidth(3.0f)
-        .moveTo(1850.0f, 360.0f)
-        .quadraticCurveTo(2050.0f, 330.0f, 2240.0f, 410.0f)
-        .quadraticCurveTo(2300.0f, 540.0f, 2220.0f, 670.0f)
-        .quadraticCurveTo(2020.0f, 710.0f, 1860.0f, 640.0f)
-        .quadraticCurveTo(1790.0f, 510.0f, 1850.0f, 360.0f)
-        .closePath()
-        .sortByTop();
+    // Dynamic nodes below are attached in code.
 
-    // Surface layer: road, dashed center line, and ground-object shadows.
-    // The road sorts by its top edge (y=300) so the dashes (bottom y up to
-    // ~530) always land on top of the asphalt. Shadows are a multi-caster
-    // batch without an intrinsic y range, so they keep an explicit z.
+    // Surface layer: ground-object shadows (explicit z — a multi-caster batch
+    // has no intrinsic y range) and the dashed yellow center line.
     LayerView& surface = root->surfaceLayer();
-    surface.addChild<PathNode>()
-        .fillColor(Color(0.35f, 0.35f, 0.35f))
-        .moveTo(-121.0f, 300.0f)
-        .lineTo(-79.0f, 360.0f)
-        .lineTo(kWorldWidth + 121.0f, 790.0f)
-        .lineTo(kWorldWidth + 79.0f, 730.0f)
-        .closePath()
-        .sortByTop();
     CustomNode& shadows = surface.addChild<CustomNode>(
         [this](DrawBatch& batch) { drawGroundShadows(batch); });
     shadows.z = 562.0f;
-    // Dashed yellow center line: one LineNode per dash, sorted by bottom y.
     const int dashCount = 24;
     for (int i = 0; i < dashCount; ++i) {
         float t0 = i / (float)dashCount;
@@ -349,26 +367,8 @@ void Game2DScene::buildRenderTree() {
             Color(0.9f, 0.85f, 0.3f)).lineWidth(4.0f).sortByBottom();
     }
 
-    // Object layer: trees, houses, rocks, and the 3D car.
-    // Sprites sort by their bottom edge; the car's z is animated per frame.
-    LayerView& object = root->objectLayer();
-    for (int i = 0; i < kTreeCount; ++i) {
-        TreeNode& node = object.addChild<TreeNode>();
-        node.trunk = &treeTrunks_[i];
-        node.foliage = &treeFoliages_[i];
-        node.x = kTrees[i].x;
-        node.y = kTrees[i].y;
-        node.scale = perspectiveScale(kTrees[i].y);
-    }
-    object.addChild<MaterialNode>(houseMaterial_, 560.0f, 360.0f, true).sortByBottom();
-    object.addChild<MaterialNode>(houseMaterial_, 2100.0f, 480.0f, true).sortByBottom();
-    object.addChild<MaterialNode>(rockMaterials_[0], 420.0f, 380.0f, true).sortByBottom();
-    object.addChild<MaterialNode>(rockMaterials_[1], 460.0f, 400.0f, true).sortByBottom();
-    object.addChild<MaterialNode>(rockMaterials_[2], 720.0f, 540.0f, true).sortByBottom();
-    object.addChild<MaterialNode>(rockMaterials_[3], 760.0f, 560.0f, true).sortByBottom();
-    object.addChild<MaterialNode>(rockMaterials_[0], 1450.0f, 430.0f, true).sortByBottom();
-    object.addChild<MaterialNode>(rockMaterials_[1], 1950.0f, 610.0f, true).sortByBottom();
-    carNode_ = &object.addChild<CustomNode>([this](DrawBatch& batch) {
+    // Object layer: the 3D car (its z is animated per frame).
+    carNode_ = &root->objectLayer().addChild<CustomNode>([this](DrawBatch& batch) {
         float cx = -100 + carT_ * (kWorldWidth + 200.0f);
         float cy = 330 + carT_ * 400.0f;
         batch.setRenderMode(useZBuffer_ ? RenderMode::ZBUFFER : RenderMode::PAINTER);
@@ -377,8 +377,7 @@ void Game2DScene::buildRenderTree() {
         batch.end3D();
     });
 
-    // Effect layer: 3D rotating cube (only node in the layer, no sort key
-    // needed).
+    // Effect layer: 3D rotating cube.
     root->effectLayer().addChild<CustomNode>([this](DrawBatch& batch) {
         batch.setRenderMode(useZBuffer_ ? RenderMode::ZBUFFER : RenderMode::PAINTER);
         batch.begin3D();
@@ -387,8 +386,7 @@ void Game2DScene::buildRenderTree() {
     });
 
     // Overlay layer: day/night tint.
-    LayerView& overlay = root->overlayLayer();
-    overlayNode_ = &overlay.addChild<RectNode>(
+    overlayNode_ = &root->overlayLayer().addChild<RectNode>(
         0.0f, 0.0f, 1280.0f, 720.0f, cachedOverlay_);
 
     setRootNode(std::move(root));
@@ -396,12 +394,12 @@ void Game2DScene::buildRenderTree() {
 }
 
 Vec2 Game2DScene::cloudPosition(int i) const {
-    return Vec2(kClouds[i].baseX + cloudOffset_ * kClouds[i].speed, kClouds[i].y);
+    return Vec2(clouds_[i].baseX + cloudOffset_ * clouds_[i].speed, clouds_[i].y);
 }
 
 void Game2DScene::updateRenderNodes() {
     // Cloud positions drift with cloudOffset_.
-    for (int i = 0; i < kCloudCount && i < (int)cloudNodes_.size(); ++i) {
+    for (int i = 0; i < (int)clouds_.size() && i < (int)cloudNodes_.size(); ++i) {
         Vec2 p = cloudPosition(i);
         cloudNodes_[i]->setPosition(p.x, p.y);
     }
@@ -433,7 +431,7 @@ void Game2DScene::createShadowCasters(World* world) {
 
     // Clouds: alpha-zero sprites that only cast shadows.
     cloudEntities_.clear();
-    for (int i = 0; i < kCloudCount; ++i) {
+    for (int i = 0; i < (int)clouds_.size(); ++i) {
         Entity cloud = world->createEntity();
         TransformComponent* t = world->addComponent<TransformComponent>(cloud);
         t->transform.scale = Vec3(1.2f, 0.8f, 1.0f);
@@ -447,7 +445,7 @@ void Game2DScene::createShadowCasters(World* world) {
 
 void Game2DScene::updateCloudShadowCasters() {
     World* world = App::instance().getWorld();
-    if (!world || cloudEntities_.size() < (size_t)kCloudCount) return;
+    if (!world || cloudEntities_.size() < clouds_.size()) return;
 
     const float horizonDrawY = 120.0f;
     const float cloudHalfH = 40.0f;
@@ -456,7 +454,7 @@ void Game2DScene::updateCloudShadowCasters() {
     // No ground shadows when the sun is below the horizon.
     bool sunAboveHorizon = (cachedLightDir_.y < 0.0f);
 
-    for (int i = 0; i < kCloudCount; ++i) {
+    for (int i = 0; i < (int)clouds_.size(); ++i) {
         Vec2 pos = cloudPosition(i);
         TransformComponent* t = world->getComponent<TransformComponent>(cloudEntities_[i]);
         SpriteComponent* s = world->getComponent<SpriteComponent>(cloudEntities_[i]);
@@ -605,9 +603,10 @@ void Game2DScene::drawGroundShadows(DrawBatch& batch) {
     Vec2 shadowDir = cachedLightDir_ * -1.0f;
     if (shadowDir.y <= 0.0f) return;
 
-    for (int i = 0; i < kTreeCount; ++i) {
-        float s = perspectiveScale(kTrees[i].y);
-        SceneFunction::drawShadow(batch, kTrees[i].x, kTrees[i].y + 40.0f,
+    for (size_t i = 0; i < treeNodes_.size(); ++i) {
+        const TreeNode* tree = static_cast<const TreeNode*>(treeNodes_[i]);
+        float s = perspectiveScale(tree->y);
+        SceneFunction::drawShadow(batch, tree->x, tree->y + 40.0f,
                                   32.0f * s, 10.0f * s, 0.0f,
                                   shadowDir);
     }

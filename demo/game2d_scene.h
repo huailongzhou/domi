@@ -13,6 +13,7 @@ class CustomNode;
 class DrawBatch;
 class MaterialNode;
 class RectNode;
+class RenderNode;
 class ScriptSystem;
 class World;
 }
@@ -71,6 +72,11 @@ private:
     domi::Material houseMaterial_;
     domi::Material horizonMaterial_;
     std::vector<int> horizonSkyline_; // texture-local hill-top y per x column
+
+    // Layout data filled from the scene file (assets/scenes/game2d.json).
+    struct CloudDef { float baseX; float y; float speed; };
+    std::vector<CloudDef> clouds_;
+    std::vector<domi::RenderNode*> treeNodes_; // TreeNode*, for ground shadows
 
     // Dynamic render nodes that are animated in update().
     std::vector<domi::MaterialNode*> cloudNodes_;

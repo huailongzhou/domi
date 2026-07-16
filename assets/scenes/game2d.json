@@ -1,0 +1,88 @@
+{
+    "comment": "Game2DScene static layout (world 2560x1440, horizon y=240). Dynamic nodes (car, cube, shadows, day/night overlay) are attached in code. Cloud/tree types are registered by the scene.",
+    "root": {
+        "type": "group",
+        "children": [
+            {
+                "type": "layer",
+                "layer": "background",
+                "children": [
+                    { "type": "material", "material": "horizon", "x": 0, "y": 120, "sort": "bottom" },
+
+                    { "type": "cloud", "material": "cloud0", "x": 150,  "y": 100, "speed": 1.0 },
+                    { "type": "cloud", "material": "cloud1", "x": 450,  "y": 80,  "speed": 0.7 },
+                    { "type": "cloud", "material": "cloud2", "x": 800,  "y": 130, "speed": 1.2 },
+                    { "type": "cloud", "material": "cloud3", "x": 1250, "y": 170, "speed": 0.5 },
+                    { "type": "cloud", "material": "cloud4", "x": 1700, "y": 200, "speed": 0.9 },
+                    { "type": "cloud", "material": "cloud5", "x": 2200, "y": 230, "speed": 1.1 }
+                ]
+            },
+            {
+                "type": "layer",
+                "layer": "ground",
+                "children": [
+                    { "type": "rect", "x": 0, "y": 240, "w": 2560, "h": 1200, "color": [0.28, 0.72, 0.28, 1.0], "sort": "top" },
+                    {
+                        "type": "path",
+                        "sort": "top",
+                        "fill": [0.18, 0.48, 0.78, 1.0],
+                        "stroke": [0.45, 0.72, 0.95, 1.0],
+                        "lineWidth": 3,
+                        "segments": [
+                            ["m", 1850, 360],
+                            ["q", 2050, 330, 2240, 410],
+                            ["q", 2300, 540, 2220, 670],
+                            ["q", 2020, 710, 1860, 640],
+                            ["q", 1790, 510, 1850, 360],
+                            ["z"]
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "layer",
+                "layer": "surface",
+                "children": [
+                    {
+                        "type": "path",
+                        "sort": "top",
+                        "fill": [0.35, 0.35, 0.35, 1.0],
+                        "segments": [
+                            ["m", -121, 300],
+                            ["l", -79, 360],
+                            ["l", 2681, 790],
+                            ["l", 2639, 730],
+                            ["z"]
+                        ]
+                    }
+                ]
+            },
+            {
+                "type": "layer",
+                "layer": "object",
+                "children": [
+                    { "type": "tree", "trunk": "trunk0", "foliage": "foliage0", "x": 180,  "y": 320 },
+                    { "type": "tree", "trunk": "trunk1", "foliage": "foliage1", "x": 940,  "y": 290 },
+                    { "type": "tree", "trunk": "trunk2", "foliage": "foliage2", "x": 820,  "y": 460 },
+                    { "type": "tree", "trunk": "trunk3", "foliage": "foliage3", "x": 220,  "y": 560 },
+                    { "type": "tree", "trunk": "trunk4", "foliage": "foliage4", "x": 840,  "y": 600 },
+                    { "type": "tree", "trunk": "trunk5", "foliage": "foliage5", "x": 1300, "y": 620 },
+                    { "type": "tree", "trunk": "trunk6", "foliage": "foliage6", "x": 1500, "y": 350 },
+                    { "type": "tree", "trunk": "trunk7", "foliage": "foliage7", "x": 1750, "y": 520 },
+                    { "type": "tree", "trunk": "trunk8", "foliage": "foliage8", "x": 2050, "y": 300 },
+                    { "type": "tree", "trunk": "trunk9", "foliage": "foliage9", "x": 2350, "y": 580 },
+
+                    { "type": "material", "material": "house", "x": 560,  "y": 360, "centered": true, "sort": "bottom" },
+                    { "type": "material", "material": "house", "x": 2100, "y": 480, "centered": true, "sort": "bottom" },
+
+                    { "type": "material", "material": "rock0", "x": 420,  "y": 380, "centered": true, "sort": "bottom" },
+                    { "type": "material", "material": "rock1", "x": 460,  "y": 400, "centered": true, "sort": "bottom" },
+                    { "type": "material", "material": "rock2", "x": 720,  "y": 540, "centered": true, "sort": "bottom" },
+                    { "type": "material", "material": "rock3", "x": 760,  "y": 560, "centered": true, "sort": "bottom" },
+                    { "type": "material", "material": "rock0", "x": 1450, "y": 430, "centered": true, "sort": "bottom" },
+                    { "type": "material", "material": "rock1", "x": 1950, "y": 610, "centered": true, "sort": "bottom" }
+                ]
+            }
+        ]
+    }
+}
