@@ -87,7 +87,13 @@ target_link_libraries(domi_engine PUBLIC
 )
 
 # Main executable
-add_executable(domi_game main.cpp)
+add_executable(domi_game
+    main.cpp
+    demo/game2d_scene.cpp
+    demo/game3d_scene.cpp
+    demo/menu_scene.cpp
+    demo/second_scene.cpp
+)
 target_link_libraries(domi_game PRIVATE domi_engine)
 
 # Scripts (WASM compilation)

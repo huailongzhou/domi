@@ -8,33 +8,70 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <string>
 #include <utility>
 
 namespace domi {
 
 class Canvas2D;
+class Font;
 class LayerView;
+
+// How a node's sort key is derived when it is recorded into a RenderList.
+enum class SortMode {
+    Z,       // use the node's z value as-is (default)
+    TopY,    // use the top edge (y1) of the node's y range
+    CenterY, // use the vertical center (y1+y2)/2 of the y range
+    BottomY  // use the bottom edge (y2) of the y range (classic ground y-sort)
+};
 
 // A node in the 2D scene render tree.
 // Scenes are composed of RenderNodes. Containers (GroupNode, LayerView)
 // own children via std::unique_ptr and pass the active RenderLayer down
 // during build(). Leaf nodes record draw calls into the RenderList.
+//
+// Sorting: by default a node sorts by its public z value. Setting a SortMode
+// makes the node derive its sort key from its own y range instead, so most
+// scene code never has to specify z explicitly.
 class RenderNode {
 public:
     float z = 0.0f;
+    SortMode sortMode = SortMode::Z;
+
     virtual ~RenderNode() {}
     virtual void build(RenderList& list, RenderLayer layer) const = 0;
+
+    // The node's vertical extent in screen space. Default: a point at y=0.
+    virtual void getYRange(float& y1, float& y2) const { y1 = 0.0f; y2 = 0.0f; }
+
+    // The effective sort key used when this node is recorded.
+    float sortKey() const {
+        if (sortMode == SortMode::Z) return z;
+        float y1, y2;
+        getYRange(y1, y2);
+        switch (sortMode) {
+            case SortMode::TopY:    return y1;
+            case SortMode::CenterY: return (y1 + y2) * 0.5f;
+            case SortMode::BottomY: return y2;
+            default:                return z;
+        }
+    }
+
+    RenderNode& sortByY(SortMode mode) { sortMode = mode; return *this; }
+    RenderNode& sortByTop()    { return sortByY(SortMode::TopY); }
+    RenderNode& sortByCenterY(){ return sortByY(SortMode::CenterY); }
+    RenderNode& sortByBottom() { return sortByY(SortMode::BottomY); }
 };
 
 // Generic container that passes the current layer through to children.
-// Children can be added one by one or all at once:
+// Children are created in place and derive their sort key from their own
+// y range (or keep z = 0):
 //   GroupNode root;
-//   root.add(RectNode(...).setZ(1.0f), PathNode().setZ(2.0f)...);
+//   root.addChild<RectNode>(...).sortByTop();
+//   root.addChild<MaterialNode>(...).sortByBottom();
 class GroupNode : public RenderNode {
 public:
     GroupNode() {}
-
-    GroupNode& setZ(float z_) { z = z_; return *this; }
 
     // Base case for the variadic add.
     GroupNode& add() { return *this; }
@@ -51,13 +88,12 @@ public:
         return add(std::forward<Rest>(rest)...);
     }
 
-    // Create a child node of type T in place with the given z and
-    // constructor args. Returns a reference so the caller can keep
-    // animating it.
+    // Create a child node of type T in place with the given constructor
+    // args. Returns a reference so the caller can set a sort strategy or
+    // keep animating it.
     template<typename T, typename... Args>
-    T& addChild(float z, Args&&... args) {
+    T& addChild(Args&&... args) {
         std::unique_ptr<T> child(new T(std::forward<Args>(args)...));
-        child->z = z;
         T& ref = *child;
         children_.push_back(std::move(child));
         return ref;
@@ -109,8 +145,6 @@ private:
 class LayerView : public GroupNode {
 public:
     explicit LayerView(RenderLayer layer) : layer_(layer) {}
-
-    LayerView& setZ(float z_) { z = z_; return *this; }
 
     void build(RenderList& list, RenderLayer) const override {
         GroupNode::build(list, layer_);
@@ -168,11 +202,15 @@ public:
     RectNode(float x, float y, float w, float h, const Color& color)
         : x_(x), y_(y), w_(w), h_(h), color_(color) {}
 
-    RectNode& setZ(float z_) { z = z_; return *this; }
+    void getYRange(float& y1, float& y2) const override {
+        y1 = y_;
+        y2 = y_ + h_;
+    }
 
     void build(RenderList& list, RenderLayer layer) const override {
-        list.setFillColor(layer, z, color_);
-        list.fillRect(layer, z, x_, y_, w_, h_);
+        const float key = sortKey();
+        list.setFillColor(layer, key, color_);
+        list.fillRect(layer, key, x_, y_, w_, h_);
     }
 
     void setColor(const Color& c) { color_ = c; }
@@ -188,11 +226,16 @@ public:
     MaterialNode(const Material& material, float x, float y, bool centered = false)
         : material_(&material), x_(x), y_(y), centered_(centered) {}
 
-    MaterialNode& setZ(float z_) { z = z_; return *this; }
-
-    // Sort by the sprite's bottom edge (drawY + height) instead of z.
-    // Matches the ground perspective: lower on screen = closer = drawn later.
-    MaterialNode& sortByBottom() { sortByBottom_ = true; return *this; }
+    void getYRange(float& y1, float& y2) const override {
+        float dy = y_;
+        float h = 0.0f;
+        if (material_ && material_->width > 0) {
+            h = static_cast<float>(material_->height);
+            if (centered_) dy -= h * 0.5f;
+        }
+        y1 = dy;
+        y2 = dy + h;
+    }
 
     void build(RenderList& list, RenderLayer layer) const override {
         if (!material_ || material_->width == 0) return;
@@ -202,8 +245,7 @@ public:
             dx -= material_->width * 0.5f;
             dy -= material_->height * 0.5f;
         }
-        float sortZ = sortByBottom_ ? dy + static_cast<float>(material_->height) : z;
-        list.drawMaterial(layer, sortZ, dx, dy, *material_);
+        list.drawMaterial(layer, sortKey(), dx, dy, *material_);
     }
 
     void setPosition(float x, float y) { x_ = x; y_ = y; }
@@ -213,14 +255,11 @@ private:
     const Material* material_;
     float x_, y_;
     bool centered_;
-    bool sortByBottom_ = false;
 };
 
 // A recorded path (moveTo/lineTo/curves/close) that can be filled and/or stroked.
 class PathNode : public RenderNode {
 public:
-    PathNode& setZ(float z_) { z = z_; return *this; }
-
     PathNode& setFillColor(const Color& c) { fillColor_ = c; hasFill_ = true; return *this; }
     PathNode& setStrokeColor(const Color& c) { strokeColor_ = c; hasStroke_ = true; return *this; }
     PathNode& setLineWidth(float w) { lineWidth_ = w; return *this; }
@@ -235,6 +274,9 @@ public:
     PathNode& quadraticCurveTo(float cpx, float cpy, float x, float y);
     PathNode& bezierCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y);
     PathNode& closePath();
+
+    // The y range covers all recorded points, including curve control points.
+    void getYRange(float& y1, float& y2) const override;
 
     void build(RenderList& list, RenderLayer layer) const override;
 
@@ -251,20 +293,144 @@ private:
     bool hasStroke_ = false;
 };
 
+// A stroked straight line.
+class LineNode : public RenderNode {
+public:
+    LineNode(float x1, float y1, float x2, float y2, const Color& color)
+        : x1_(x1), y1_(y1), x2_(x2), y2_(y2), color_(color) {}
+
+    LineNode& setLineWidth(float w) { lineWidth_ = w; return *this; }
+    LineNode& lineWidth(float w) { return setLineWidth(w); }
+
+    void getYRange(float& y1, float& y2) const override {
+        y1 = y1_ < y2_ ? y1_ : y2_;
+        y2 = y1_ > y2_ ? y1_ : y2_;
+    }
+
+    void build(RenderList& list, RenderLayer layer) const override {
+        const float key = sortKey();
+        list.setStrokeColor(layer, key, color_);
+        list.setLineWidth(layer, key, lineWidth_);
+        list.drawLine(layer, key, x1_, y1_, x2_, y2_);
+    }
+
+    void setColor(const Color& c) { color_ = c; }
+    void setEndpoints(float x1, float y1, float x2, float y2) {
+        x1_ = x1; y1_ = y1; x2_ = x2; y2_ = y2;
+    }
+
+private:
+    float x1_, y1_, x2_, y2_;
+    Color color_;
+    float lineWidth_ = 1.0f;
+};
+
+// An ellipse (or circle) that can be filled and/or stroked.
+// By default it draws the full ellipse; setArc() restricts the sweep.
+class EllipseNode : public RenderNode {
+public:
+    EllipseNode(float x, float y, float rx, float ry)
+        : x_(x), y_(y), rx_(rx), ry_(ry) {}
+
+    EllipseNode& setFillColor(const Color& c) { fillColor_ = c; hasFill_ = true; return *this; }
+    EllipseNode& setStrokeColor(const Color& c) { strokeColor_ = c; hasStroke_ = true; return *this; }
+    EllipseNode& setLineWidth(float w) { lineWidth_ = w; return *this; }
+
+    EllipseNode& fillColor(const Color& c) { return setFillColor(c); }
+    EllipseNode& strokeColor(const Color& c) { return setStrokeColor(c); }
+    EllipseNode& lineWidth(float w) { return setLineWidth(w); }
+
+    // Limit the sweep angles (radians). Defaults to a full ellipse.
+    EllipseNode& setArc(float rotation, float startAngle, float endAngle, bool ccw = false) {
+        rotation_ = rotation;
+        startAngle_ = startAngle;
+        endAngle_ = endAngle;
+        ccw_ = ccw;
+        return *this;
+    }
+
+    void getYRange(float& y1, float& y2) const override {
+        y1 = y_ - ry_;
+        y2 = y_ + ry_;
+    }
+
+    void build(RenderList& list, RenderLayer layer) const override {
+        const float key = sortKey();
+        if (hasFill_) {
+            list.setFillColor(layer, key, fillColor_);
+        }
+        if (hasStroke_) {
+            list.setStrokeColor(layer, key, strokeColor_);
+            list.setLineWidth(layer, key, lineWidth_);
+        }
+        list.beginPath(layer, key);
+        list.ellipse(layer, key, x_, y_, rx_, ry_, rotation_, startAngle_, endAngle_, ccw_);
+        if (hasFill_) {
+            list.fill(layer, key);
+        }
+        if (hasStroke_) {
+            list.stroke(layer, key);
+        }
+    }
+
+    void setCenter(float x, float y) { x_ = x; y_ = y; }
+    void setRadius(float rx, float ry) { rx_ = rx; ry_ = ry; }
+
+private:
+    float x_, y_, rx_, ry_;
+    float rotation_ = 0.0f;
+    float startAngle_ = 0.0f;
+    float endAngle_ = 2.0f * 3.14159265f;
+    bool ccw_ = false;
+    Color fillColor_;
+    Color strokeColor_;
+    float lineWidth_ = 1.0f;
+    bool hasFill_ = false;
+    bool hasStroke_ = false;
+};
+
+// A text string drawn with a Font.
+class TextNode : public RenderNode {
+public:
+    TextNode(const char* text, Font* font, float x, float y, const Color& color)
+        : text_(text ? text : ""), font_(font), x_(x), y_(y), color_(color) {}
+
+    void getYRange(float& y1, float& y2) const override {
+        y1 = y_;
+        y2 = y_;
+    }
+
+    void build(RenderList& list, RenderLayer layer) const override {
+        if (font_) {
+            list.drawText(layer, sortKey(), x_, y_, text_.c_str(), font_, color_);
+        }
+    }
+
+    void setText(const char* text) { text_ = text ? text : ""; }
+    void setPosition(float x, float y) { x_ = x; y_ = y; }
+    void setColor(const Color& c) { color_ = c; }
+
+private:
+    std::string text_;
+    Font* font_;
+    float x_, y_;
+    Color color_;
+};
+
 // A custom procedural draw node. The callback records a group of canvas
 // calls into a DrawBatch; the batch is committed as a single item that
-// shares this node's z and replays atomically at flush time.
+// shares this node's sort key and replays atomically at flush time.
+// CustomNode has no intrinsic y range, so it sorts by z unless you give
+// it a y range by deriving from it.
 class CustomNode : public RenderNode {
 public:
     using DrawFn = std::function<void(DrawBatch&)>;
     explicit CustomNode(DrawFn fn) : fn_(std::move(fn)) {}
 
-    CustomNode& setZ(float z_) { z = z_; return *this; }
-
     void build(RenderList& list, RenderLayer layer) const override {
         DrawBatch batch;
         fn_(batch);
-        list.submit(layer, z, batch);
+        list.submit(layer, sortKey(), batch);
     }
 private:
     DrawFn fn_;
