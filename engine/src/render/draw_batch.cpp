@@ -88,8 +88,9 @@ void DrawBatch::ellipse(float x, float y, float rx, float ry, float rotation,
 }
 
 void DrawBatch::drawMaterial(float x, float y, const Material& material) {
-    push([x, y, material](Canvas2D* canvas) {
-        canvas->drawMaterial(x, y, material);
+    // Captured by pointer, not copied: the material must outlive run().
+    push([x, y, &material](Canvas2D* canvas) {
+        canvas->drawMaterialCached(x, y, material);
     });
 }
 
@@ -104,7 +105,8 @@ void DrawBatch::end3D() {
 void DrawBatch::drawMesh3D(float cx, float cy, float scale,
                            float rotX, float rotY, float rotZ,
                            const Mesh3D& mesh) {
-    push([cx, cy, scale, rotX, rotY, rotZ, mesh](Canvas2D* canvas) {
+    // Captured by pointer, not copied: the mesh must outlive run().
+    push([cx, cy, scale, rotX, rotY, rotZ, &mesh](Canvas2D* canvas) {
         canvas->drawMesh3D(cx, cy, scale, rotX, rotY, rotZ,
                            mesh.vertices.data(), (int)mesh.vertices.size(),
                            mesh.indices.data(), mesh.triangleCount(),

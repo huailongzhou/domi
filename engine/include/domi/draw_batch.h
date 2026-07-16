@@ -56,10 +56,10 @@ public:
     void ellipse(float x, float y, float rx, float ry, float rotation,
                  float startAngle, float endAngle, bool ccw = false);
 
-    // Materials (the material is copied).
+    // Materials (referenced, not copied — must outlive run()).
     void drawMaterial(float x, float y, const Material& material);
 
-    // Software-rasterized 3D (the mesh is copied).
+    // Software-rasterized 3D (mesh referenced, not copied — must outlive run()).
     void begin3D();
     void end3D();
     void drawMesh3D(float cx, float cy, float scale,

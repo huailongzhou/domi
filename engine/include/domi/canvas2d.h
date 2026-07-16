@@ -93,6 +93,13 @@ public:
     // Draw a generated material at (x, y). Handles all PixelFormat variants.
     void drawMaterial(float x, float y, const Material& material);
 
+    // Like drawMaterial, but uploads the material only on first use and
+    // reuses the cached texture afterwards (keyed by the material's address),
+    // avoiding a full pixel-hash per draw. The material must be immutable
+    // and outlive its cache entry; for mutable content use the explicit
+    // key-based uploadMaterial/drawMaterial API below.
+    void drawMaterialCached(float x, float y, const Material& material);
+
     // Key-based material cache. Allows callers to avoid expensive CPU work
     // (e.g. FreeType rasterization) when the same material has already been
     // uploaded. The key is an opaque caller-provided string.
@@ -159,6 +166,15 @@ private:
     void* lockedPixels_;
     int lockedPitch_;
     std::vector<float> depthBuffer_;
+    // Per-pixel stamp of the 3D pair that last wrote the pixel. The z-test
+    // treats only pixels stamped by the current pair as valid depth —
+    // everything else counts as "cleared", so the depth/pixel buffers never
+    // need explicit clearing. end3D zeroes unstamped pixels inside the
+    // presented region so stale colors don't show through.
+    std::vector<int> pairStamp3D_;
+    int pairId3D_;
+    // Bounding box of the pixels touched this pair; presented by end3D.
+    int present3DX0_, present3DY0_, present3DX1_, present3DY1_;
 
     RenderMode renderMode_;
     bool batching_;

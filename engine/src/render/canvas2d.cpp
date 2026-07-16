@@ -15,10 +15,13 @@ Canvas2D::Canvas2D(IRenderBackend* backend)
       in3D_(false),
       lockedPixels_(NULL),
       lockedPitch_(0),
+      pairId3D_(0),
+      present3DX0_(0), present3DY0_(0), present3DX1_(0), present3DY1_(0),
       renderMode_(RenderMode::PAINTER),
       batching_(true),
       pathClosed_(false) {
     depthBuffer_.assign(width_ * height_, 1.0f);
+    pairStamp3D_.assign(width_ * height_, -1);
 }
 
 Canvas2D::~Canvas2D() {
@@ -419,6 +422,15 @@ void Canvas2D::drawMaterial(float x, float y, const Material& material) {
     backend_->drawMaterial(p.x, p.y, handle, angle, centerX, centerY, sx, sy);
 }
 
+void Canvas2D::drawMaterialCached(float x, float y, const Material& material) {
+    char key[32];
+    snprintf(key, sizeof(key), "ptr:%p", (const void*)&material);
+    if (!checkMaterial(key)) {
+        uploadMaterial(key, material);
+    }
+    drawMaterial(key, x, y);
+}
+
 void Canvas2D::drawText(float x, float y, const char* text, Font* font, const Color& color) {
     if (!font) return;
     font->drawText(this, x, y, text, color);
@@ -516,15 +528,41 @@ void Canvas2D::begin3D() {
     flush();
     if (backend_->lock3DTarget(&lockedPixels_, &lockedPitch_)) {
         in3D_ = true;
-        std::fill(depthBuffer_.begin(), depthBuffer_.end(), 1.0f);
+        // Advance the pair id instead of clearing the depth/pixel buffers:
+        // only pixels stamped with this id hold valid data this pair.
+        ++pairId3D_;
+        if (pairId3D_ < 0) { // wrapped: reset all stamps
+            std::fill(pairStamp3D_.begin(), pairStamp3D_.end(), -1);
+            pairId3D_ = 0;
+        }
+        present3DX0_ = present3DY0_ = present3DX1_ = present3DY1_ = 0;
     }
 }
 
 void Canvas2D::end3D() {
     if (!in3D_) return;
     in3D_ = false;
+
+    // Zero out pixels inside the presented region that this pair did not
+    // write, so stale content from previous pairs doesn't show through.
+    if (lockedPixels_ && present3DX1_ > present3DX0_ && present3DY1_ > present3DY0_) {
+        for (int y = present3DY0_; y < present3DY1_; ++y) {
+            uint8_t* row = (uint8_t*)lockedPixels_ + y * lockedPitch_;
+            int idx = y * width_ + present3DX0_;
+            for (int x = present3DX0_; x < present3DX1_; ++x, ++idx) {
+                if (pairStamp3D_[idx] != pairId3D_) {
+                    *(uint32_t*)(row + (size_t)x * 4) = 0;
+                }
+            }
+        }
+    }
+
     backend_->unlock3DTarget();
-    backend_->present3DTarget();
+    lockedPixels_ = NULL;
+    // Present only the region that was touched this pair.
+    backend_->present3DTarget(present3DX0_, present3DY0_,
+                              present3DX1_ - present3DX0_,
+                              present3DY1_ - present3DY0_);
 }
 
 void Canvas2D::fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
@@ -548,6 +586,19 @@ void Canvas2D::fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
     if (minY < 0.0f) minY = 0.0f;
     if (maxX >= width_) maxX = width_ - 1;
     if (maxY >= height_) maxY = height_ - 1;
+
+    // Track the bounding box of touched pixels; end3D presents only this.
+    const int bx0 = (int)minX, by0 = (int)minY;
+    const int bx1 = (int)maxX + 1, by1 = (int)maxY + 1;
+    if (present3DX1_ <= present3DX0_ || present3DY1_ <= present3DY0_) {
+        present3DX0_ = bx0; present3DY0_ = by0;
+        present3DX1_ = bx1; present3DY1_ = by1;
+    } else {
+        if (bx0 < present3DX0_) present3DX0_ = bx0;
+        if (by0 < present3DY0_) present3DY0_ = by0;
+        if (bx1 > present3DX1_) present3DX1_ = bx1;
+        if (by1 > present3DY1_) present3DY1_ = by1;
+    }
 
     Vec3 v0(tc.x - ta.x, tc.y - ta.y, 0.0f);
     Vec3 v1(tb.x - ta.x, tb.y - ta.y, 0.0f);
@@ -575,7 +626,10 @@ void Canvas2D::fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
 
             float z = alpha * za + beta * zb + gamma * zc;
             int idx = y * width_ + x;
-            if (z < depthBuffer_[idx]) {
+            // A pixel counts as cleared unless this pair already wrote it;
+            // no buffer clearing is needed between pairs.
+            if (pairStamp3D_[idx] != pairId3D_ || z < depthBuffer_[idx]) {
+                pairStamp3D_[idx] = pairId3D_;
                 depthBuffer_[idx] = z;
                 int px = x * 4;
                 row[px + 0] = cr;

@@ -84,7 +84,7 @@ public:
 
     bool lock3DTarget(void** pixels, int* pitch) override;
     void unlock3DTarget() override;
-    void present3DTarget() override;
+    void present3DTarget(int x, int y, int w, int h) override;
 
     // IInputBackend
     bool init() override;

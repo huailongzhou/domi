@@ -102,8 +102,10 @@ void RenderList::ellipse(RenderLayer layer, float z, float x, float y,
 }
 
 void RenderList::drawMaterial(RenderLayer layer, float z, float x, float y, const Material& material) {
-    add(layer, z, [x, y, material](Canvas2D* canvas) {
-        canvas->drawMaterial(x, y, material);
+    // Captured by pointer, not copied: the material must outlive the flush
+    // (scene-owned materials satisfy this — the list lives within a frame).
+    add(layer, z, [x, y, &material](Canvas2D* canvas) {
+        canvas->drawMaterialCached(x, y, material);
     });
 }
 

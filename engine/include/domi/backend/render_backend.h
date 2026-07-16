@@ -125,8 +125,8 @@ public:
     virtual bool lock3DTarget(void** pixels, int* pitch) = 0;
     virtual void unlock3DTarget() = 0;
 
-    // Composite the 3D target onto the current target.
-    virtual void present3DTarget() = 0;
+    // Composite the given region of the 3D target onto the current target.
+    virtual void present3DTarget(int x, int y, int w, int h) = 0;
 };
 
 } // namespace domi

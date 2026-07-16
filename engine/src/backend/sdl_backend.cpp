@@ -709,14 +709,8 @@ bool SDLBackend::lock3DTarget(void** pixels, int* pitch) {
     if (!renderer_ || !pixels || !pitch) return false;
     ensure3DTarget();
     if (!target3D_) return false;
-    if (SDL_LockTexture(target3D_, NULL, pixels, pitch)) {
-        // Clear to transparent.
-        int w, h;
-        SDL_GetRenderOutputSize(renderer_, &w, &h);
-        memset(*pixels, 0, (*pitch) * h);
-        return true;
-    }
-    return false;
+    // No full-buffer clear here: Canvas2D clears only the regions it draws into.
+    return SDL_LockTexture(target3D_, NULL, pixels, pitch);
 }
 
 void SDLBackend::unlock3DTarget() {
@@ -725,10 +719,10 @@ void SDLBackend::unlock3DTarget() {
     }
 }
 
-void SDLBackend::present3DTarget() {
-    if (target3D_) {
-        SDL_RenderTexture(renderer_, target3D_, NULL, NULL);
-    }
+void SDLBackend::present3DTarget(int x, int y, int w, int h) {
+    if (!target3D_ || w <= 0 || h <= 0) return;
+    SDL_FRect r = { (float)x, (float)y, (float)w, (float)h };
+    SDL_RenderTexture(renderer_, target3D_, &r, &r);
 }
 
 } // namespace domi
