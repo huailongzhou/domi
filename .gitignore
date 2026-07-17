@@ -54,3 +54,6 @@ compile_commands.json
 # Temporary / backup files
 *.bak
 *.tmp
+
+# ImGui layout persistence (generated at runtime)
+imgui.ini

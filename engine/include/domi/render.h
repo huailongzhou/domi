@@ -3,6 +3,7 @@
 
 #include "domi/math.h"
 #include "domi/ecs.h"
+#include <functional>
 
 struct SDL_GPUBuffer;
 struct SDL_GPUGraphicsPipeline;
@@ -27,6 +28,9 @@ public:
     void render(World* world, SceneManager* sceneManager = NULL, float fps = 0.0f);
 
     Canvas2D* getCanvas2D() { return canvas_; }
+
+    // Forwarded to the underlying Renderer (see Renderer::setPrePresentHook).
+    void setPrePresentHook(std::function<void()> hook);
 
     // 2D
     void drawSprite(const Vec3& pos, const Vec2& size, const Color& color, const char* texture);

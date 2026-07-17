@@ -37,8 +37,6 @@ bool layerFromName(const std::string& name, RenderLayer& out) {
 } // namespace
 
 std::unique_ptr<GroupNode> SceneLoader::load(const char* path) {
-    ids_.clear();
-
     std::ifstream in(path);
     if (!in) {
         fprintf(stderr, "[SCENE_LOADER] Cannot open '%s'\n", path);
@@ -52,8 +50,14 @@ std::unique_ptr<GroupNode> SceneLoader::load(const char* path) {
         fprintf(stderr, "[SCENE_LOADER] '%s' is not valid JSON\n", path);
         return nullptr;
     }
+    return loadFromJson(doc);
+}
+
+std::unique_ptr<GroupNode> SceneLoader::loadFromJson(const json& doc) {
+    ids_.clear();
+
     if (!doc.contains("root")) {
-        fprintf(stderr, "[SCENE_LOADER] '%s' has no \"root\" node\n", path);
+        fprintf(stderr, "[SCENE_LOADER] document has no \"root\" node\n");
         return nullptr;
     }
 
@@ -62,7 +66,7 @@ std::unique_ptr<GroupNode> SceneLoader::load(const char* path) {
 
     GroupNode* group = dynamic_cast<GroupNode*>(root.get());
     if (!group) {
-        fprintf(stderr, "[SCENE_LOADER] '%s': root must be a group or layer\n", path);
+        fprintf(stderr, "[SCENE_LOADER] root must be a group or layer\n");
         return nullptr;
     }
     root.release();

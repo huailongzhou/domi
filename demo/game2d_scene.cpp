@@ -11,6 +11,7 @@
 #include "domi/scene_loader.h"
 #include "domi/scene_function.h"
 #include "second_scene.h"
+#include "tree_node.h"
 #include "tree_generator.h"
 #include "cloud_generator.h"
 #include "rock_generator.h"
@@ -30,40 +31,6 @@ constexpr float Game2DScene::kWorldWidth;
 constexpr float Game2DScene::kWorldHeight;
 
 namespace {
-
-// A 2D tree sprite with separate trunk and foliage materials.
-// The trunk is sorted by the tree bottom; foliage draws slightly after it.
-class TreeNode : public RenderNode {
-public:
-    const Material* trunk = nullptr;
-    const Material* foliage = nullptr;
-    float x = 0.0f;
-    float y = 0.0f;
-    float scale = 1.0f;
-
-    void build(RenderList& list, RenderLayer layer) const override {
-        const float treeHeight = 80.0f;
-        float bottomZ = y + treeHeight * 0.5f;
-        if (trunk && trunk->width > 0) {
-            DrawBatch batch;
-            batch.save();
-            batch.translate(x, y + 40.0f);
-            batch.scale(scale, scale);
-            batch.drawMaterial(-trunk->width * 0.5f, -trunk->height, *trunk);
-            batch.restore();
-            list.submit(layer, bottomZ, batch);
-        }
-        if (foliage && foliage->width > 0) {
-            DrawBatch batch;
-            batch.save();
-            batch.translate(x, y + 40.0f);
-            batch.scale(scale, scale);
-            batch.drawMaterial(-foliage->width * 0.5f, -foliage->height, *foliage);
-            batch.restore();
-            list.submit(layer, bottomZ + 0.1f, batch);
-        }
-    }
-};
 
 // How many cloud/tree sprite variants to pre-generate. Placements (which
 // variant goes where) live in assets/scenes/game2d.json.

@@ -139,6 +139,7 @@ void App::processEvents() {
             running_ = false;
         }
         input_->handleEvent(e);
+        if (eventHook_) eventHook_(e);
     }
 }
 

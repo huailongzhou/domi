@@ -45,6 +45,9 @@ public:
     void* getNativeGPUDevice() override { return gpuDevice_; }
     void* getNativeWindow() override { return window_; }
 
+    // Raw SDL_Renderer access for tools that draw outside the passes.
+    void* getNativeRenderer() { return renderer_; }
+
     // IRenderBackend
     void setTarget(RenderTexture* target) override;
     void clear(const Color& c) override;

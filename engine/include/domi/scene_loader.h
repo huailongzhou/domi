@@ -55,6 +55,9 @@ public:
     // (the reason is printed to stderr).
     std::unique_ptr<GroupNode> load(const char* path);
 
+    // Builds the tree from an already-parsed document (must contain "root").
+    std::unique_ptr<GroupNode> loadFromJson(const nlohmann::json& doc);
+
     // Returns the node that was loaded with the given "id", or nullptr.
     RenderNode* find(const std::string& id) const {
         std::unordered_map<std::string, RenderNode*>::const_iterator it = ids_.find(id);

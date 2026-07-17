@@ -97,6 +97,30 @@ add_executable(domi_game
 )
 target_link_libraries(domi_game PRIVATE domi_engine)
 
+# Dear ImGui (vendored, for tools)
+set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/third_party/imgui)
+add_library(imgui STATIC
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_sdlrenderer3.cpp
+)
+target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
+target_link_libraries(imgui PUBLIC SDL3::SDL3)
+
+# Scene editor
+add_executable(domi_editor
+    editor/editor_main.cpp
+    editor/editor_scene.cpp
+)
+target_include_directories(domi_editor PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/demo
+)
+target_link_libraries(domi_editor PRIVATE domi_engine imgui)
+
 # Scripts (WASM compilation)
 set(WASM_COMPILER "auto" CACHE STRING "WASM compiler: auto, emscripten, brew-llvm, wasi-sdk")
 

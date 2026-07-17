@@ -4,6 +4,9 @@
 #include "domi/window.h"
 #include "domi/ecs.h"
 #include <cstdint>
+#include <functional>
+
+union SDL_Event;
 
 namespace domi {
 
@@ -49,6 +52,15 @@ public:
     bool isRunning() const { return running_; }
     void quit() { running_ = false; }
 
+    // Optional hook invoked for every SDL event, after the built-in input
+    // handling. Used by tools (e.g. the ImGui editor) to observe input.
+    void setEventHook(std::function<void(const SDL_Event&)> hook) {
+        eventHook_ = std::move(hook);
+    }
+
+    // Raw backend access (needed by tools that draw outside the passes).
+    SDLBackend* getBackend() { return backend_; }
+
 private:
     App();
     ~App();
@@ -72,6 +84,7 @@ private:
 
     bool running_;
     bool initialized_;
+    std::function<void(const SDL_Event&)> eventHook_;
     double deltaTime_;
     double totalTime_;
     double fixedTime_;

@@ -205,6 +205,10 @@ void RenderSystem::shutdown() {
     canvas_ = NULL;
 }
 
+void RenderSystem::setPrePresentHook(std::function<void()> hook) {
+    if (renderer_) renderer_->setPrePresentHook(std::move(hook));
+}
+
 void RenderSystem::render(World* world, SceneManager* sceneManager, float fps) {
     if (!renderBackend_ || !windowBackend_) return;
 

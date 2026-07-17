@@ -3,6 +3,7 @@
 
 #include "domi/render_context.h"
 #include "domi/render_texture.h"
+#include <functional>
 #include <vector>
 
 namespace domi {
@@ -54,6 +55,13 @@ public:
     int width() const { return width_; }
     int height() const { return height_; }
 
+    // Optional hook invoked after all passes have been submitted, right
+    // before the backend presents. Tools (e.g. the ImGui editor) use it to
+    // draw directly onto the final target.
+    void setPrePresentHook(std::function<void()> hook) {
+        prePresentHook_ = std::move(hook);
+    }
+
 private:
     IRenderBackend* backend_;
     Canvas2D* canvas_;
@@ -66,6 +74,8 @@ private:
 
     int width_;
     int height_;
+
+    std::function<void()> prePresentHook_;
 
     bool createBuffers(int w, int h);
 };

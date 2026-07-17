@@ -130,6 +130,7 @@ void Renderer::render(World* world, SceneManager* sceneManager, float fps) {
 
     // Submit remaining queued commands and present.
     canvas_->flush();
+    if (prePresentHook_) prePresentHook_();
     backend_->present();
 }
 
