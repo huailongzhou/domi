@@ -94,10 +94,11 @@ public:
     void drawMaterial(float x, float y, const Material& material);
 
     // Like drawMaterial, but uploads the material only on first use and
-    // reuses the cached texture afterwards (keyed by the material's address),
-    // avoiding a full pixel-hash per draw. The material must be immutable
-    // and outlive its cache entry; for mutable content use the explicit
-    // key-based uploadMaterial/drawMaterial API below.
+    // reuses the cached texture afterwards, avoiding a full pixel-hash per
+    // draw. The cache key is the material's id when set, otherwise its
+    // address. The material must be immutable while cached; to refresh the
+    // cached texture after regenerating pixels, call uploadMaterial() again
+    // with the same id key (it replaces the old entry).
     void drawMaterialCached(float x, float y, const Material& material);
 
     // Key-based material cache. Allows callers to avoid expensive CPU work

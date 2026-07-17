@@ -423,12 +423,22 @@ void Canvas2D::drawMaterial(float x, float y, const Material& material) {
 }
 
 void Canvas2D::drawMaterialCached(float x, float y, const Material& material) {
-    char key[32];
-    snprintf(key, sizeof(key), "ptr:%p", (const void*)&material);
-    if (!checkMaterial(key)) {
-        uploadMaterial(key, material);
+    // Prefer the material's stable id so the cache survives the object being
+    // moved, copied or regenerated in place; fall back to its address.
+    std::string key;
+    char addrKey[32];
+    const char* keyStr;
+    if (!material.id.empty()) {
+        key = "id:" + material.id;
+        keyStr = key.c_str();
+    } else {
+        snprintf(addrKey, sizeof(addrKey), "ptr:%p", (const void*)&material);
+        keyStr = addrKey;
     }
-    drawMaterial(key, x, y);
+    if (!checkMaterial(keyStr)) {
+        uploadMaterial(keyStr, material);
+    }
+    drawMaterial(keyStr, x, y);
 }
 
 void Canvas2D::drawText(float x, float y, const char* text, Font* font, const Color& color) {
@@ -446,6 +456,13 @@ void* Canvas2D::uploadMaterial(const char* key, const Material& material) {
     if (!backend_ || !key) return NULL;
     void* handle = backend_->uploadMaterial(material);
     if (handle) {
+        // Replace any previous entry: destroying the old texture keeps
+        // re-uploads (e.g. after regenerating a material) leak-free.
+        std::unordered_map<std::string, void*>::iterator it =
+            materialKeyCache_.find(key);
+        if (it != materialKeyCache_.end() && it->second != handle) {
+            backend_->destroyMaterial(it->second);
+        }
         materialKeyCache_[key] = handle;
     }
     return handle;

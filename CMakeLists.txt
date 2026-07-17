@@ -55,6 +55,7 @@ add_library(domi_engine STATIC
     engine/src/render/pass/composite_pass.cpp
     engine/src/render/pass/ui_pass.cpp
     engine/src/render/render_node.cpp
+    engine/src/render/material_io.cpp
     engine/src/scene/scene.cpp
     engine/src/scene/scene_loader.cpp
     engine/src/scene/scene_manager.cpp

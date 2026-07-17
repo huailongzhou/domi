@@ -11,7 +11,15 @@
 namespace domi {
 
 struct MaterialCache {
-    std::unordered_map<uint64_t, SDL_Texture*> textures;
+    // Textures are deduplicated by content hash, so several callers can hold
+    // the same texture (e.g. the scene and an editor preview of an identical
+    // material). Refcounted: only the last destroyMaterial() actually
+    // destroys the texture.
+    struct Entry {
+        SDL_Texture* texture;
+        int refs;
+    };
+    std::unordered_map<uint64_t, Entry> textures;
 };
 
 namespace {
@@ -414,7 +422,7 @@ bool SDLBackend::create(const std::string& title, int width, int height) {
 void SDLBackend::destroy() {
     if (materialCache_) {
         for (auto& it : materialCache_->textures) {
-            if (it.second) SDL_DestroyTexture(it.second);
+            if (it.second.texture) SDL_DestroyTexture(it.second.texture);
         }
         materialCache_->textures.clear();
     }
@@ -631,13 +639,17 @@ void* SDLBackend::uploadMaterial(const Material& material) {
     uint64_t hash = computeMaterialHash(material);
     auto it = materialCache_->textures.find(hash);
     if (it != materialCache_->textures.end()) {
-        return it->second;
+        ++it->second.refs;
+        return it->second.texture;
     }
 
     SDL_Texture* tex = uploadMaterialTexture(renderer_, material);
     if (!tex) return NULL;
 
-    materialCache_->textures[hash] = tex;
+    MaterialCache::Entry entry;
+    entry.texture = tex;
+    entry.refs = 1;
+    materialCache_->textures[hash] = entry;
     return tex;
 }
 
@@ -664,9 +676,12 @@ void SDLBackend::destroyMaterial(void* handle) {
     SDL_Texture* tex = static_cast<SDL_Texture*>(handle);
     for (auto it = materialCache_->textures.begin();
          it != materialCache_->textures.end(); ++it) {
-        if (it->second == tex) {
-            SDL_DestroyTexture(it->second);
-            materialCache_->textures.erase(it);
+        if (it->second.texture == tex) {
+            // Shared texture: only destroy once the last reference is gone.
+            if (--it->second.refs <= 0) {
+                SDL_DestroyTexture(it->second.texture);
+                materialCache_->textures.erase(it);
+            }
             return;
         }
     }

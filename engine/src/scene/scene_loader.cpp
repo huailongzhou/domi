@@ -55,6 +55,7 @@ std::unique_ptr<GroupNode> SceneLoader::load(const char* path) {
 
 std::unique_ptr<GroupNode> SceneLoader::loadFromJson(const json& doc) {
     ids_.clear();
+    materialNodes_.clear();
 
     if (!doc.contains("root")) {
         fprintf(stderr, "[SCENE_LOADER] document has no \"root\" node\n");
@@ -123,8 +124,10 @@ std::unique_ptr<RenderNode> SceneLoader::buildNode(const json& j) {
                     name.c_str());
             return nullptr;
         }
-        node.reset(new MaterialNode(*material, getFloat(j, "x"), getFloat(j, "y"),
-                                    j.value("centered", false)));
+        MaterialNode* matNode = new MaterialNode(*material, getFloat(j, "x"), getFloat(j, "y"),
+                                                 j.value("centered", false));
+        materialNodes_.push_back(std::make_pair(name, matNode));
+        node.reset(matNode);
     } else if (type == "path") {
         std::unique_ptr<PathNode> path(new PathNode());
         if (j.contains("fill")) path->setFillColor(getColor(j, "fill"));

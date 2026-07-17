@@ -10,17 +10,14 @@
 #include "domi/render_node.h"
 #include "domi/scene_loader.h"
 #include "domi/scene_function.h"
+#include "domi/material_io.h"
 #include "second_scene.h"
-#include "tree_node.h"
-#include "tree_generator.h"
-#include "cloud_generator.h"
-#include "rock_generator.h"
-#include "house_generator.h"
-#include "horizon_generator.h"
 #include "3d/cube3d_generator.h"
 #include "3d/car3d_generator.h"
 #include <cmath>
 #include <cstdio>
+#include <string>
+#include <SDL3/SDL_filesystem.h>
 
 using namespace domi;
 
@@ -29,15 +26,6 @@ using namespace domi;
 constexpr float Game2DScene::kHorizonY;
 constexpr float Game2DScene::kWorldWidth;
 constexpr float Game2DScene::kWorldHeight;
-
-namespace {
-
-// How many cloud/tree sprite variants to pre-generate. Placements (which
-// variant goes where) live in assets/scenes/game2d.json.
-const int kCloudMaterialCount = 6;
-const int kTreeMaterialCount = 10;
-
-} // namespace
 
 Game2DScene::Game2DScene()
     : carT_(0.0f), carSpeed_(0.25f), cloudOffset_(0.0f),
@@ -150,77 +138,78 @@ void Game2DScene::clampCamera() {
     }
 }
 
+// Derives the hill-top skyline from a baked horizon texture: per x column,
+// the y of the first pixel whose alpha is above a small threshold (the sky
+// part of the texture is transparent).
+static std::vector<int> deriveSkyline(const Material& m) {
+    std::vector<int> skyline(m.width, m.height);
+    if (m.format != PixelFormat::ARGB8888) return skyline;
+    for (int x = 0; x < m.width; ++x) {
+        for (int y = 0; y < m.height; ++y) {
+            const uint8_t a = m.pixels[((size_t)y * m.width + x) * 4];
+            if (a > 8) {
+                skyline[x] = y;
+                break;
+            }
+        }
+    }
+    return skyline;
+}
+
+void Game2DScene::loadMaterials() {
+    materials_.clear();
+
+    // Load every baked texture in assets/materials/ (same prefix search as
+    // the scene file). Material names come from the file names (<name>.tex),
+    // so anything the editor exports is available to the scene.
+    const char* prefixes[] = { "", "../", "../../" };
+    for (size_t p = 0; p < sizeof(prefixes) / sizeof(prefixes[0]); ++p) {
+        const std::string dir = std::string(prefixes[p]) + "assets/materials";
+        int count = 0;
+        char** files = SDL_GlobDirectory(dir.c_str(), "*.tex", 0, &count);
+        if (!files) continue;
+        for (int i = 0; i < count; ++i) {
+            // Entries may or may not include the directory prefix.
+            std::string path = files[i];
+            std::string base = path;
+            const size_t slash = base.find_last_of("/\\");
+            if (slash != std::string::npos) {
+                base = base.substr(slash + 1);
+            } else {
+                path = dir + "/" + path;
+            }
+            if (base.size() < 4 || base.compare(base.size() - 4, 4, ".tex") != 0) continue;
+            Material m;
+            if (!loadMaterialFile(path.c_str(), m)) {
+                fprintf(stderr, "[GAME2D] Cannot load material '%s'\n", path.c_str());
+                continue;
+            }
+            m.id = base.substr(0, base.size() - 4);
+            materials_.push_back(m);
+        }
+        SDL_free(files);
+        break; // first existing directory wins
+    }
+
+    materialMap_.clear();
+    for (size_t i = 0; i < materials_.size(); ++i) {
+        materialMap_[materials_[i].id] = &materials_[i];
+    }
+    fprintf(stderr, "[GAME2D] Loaded %d baked materials\n", (int)materials_.size());
+}
+
 void Game2DScene::load(World* world, ScriptSystem* script) {
     (void)script;
 
-    // Generate tree and cloud materials using the fluent generator API.
-    // Format can be changed to PixelFormat::RGB565, PixelFormat::LUT8,
-    // or PixelFormat::AlphaMask to experiment with different outputs.
-    // Generate several randomized variants for each material type so that the
-    // scene looks varied instead of repeating the same sprite.
-    treeTrunks_.clear();
-    treeFoliages_.clear();
-    for (int i = 0; i < kTreeMaterialCount; ++i) {
-        Material trunk, foliage;
-        TreeGenerator()
-            .setSize(80, 80)
-            .setFormat(PixelFormat::ARGB8888)
-            .setSeed(1000u + i * 137u)
-            .setBaseColor(Color(0.15f, 0.55f, 0.15f, 1.0f))
-            .setHighlightColor(Color(0.22f, 0.68f, 0.22f, 1.0f))
-            .setDetailColor(Color(0.45f, 0.28f, 0.16f, 1.0f))
-            .setTrunkSize(14, 32)
-            .setFoliageRadius(30)
-            .buildPair(trunk, foliage);
-        treeTrunks_.push_back(trunk);
-        treeFoliages_.push_back(foliage);
+    loadMaterials();
+
+    const std::map<std::string, const Material*>::const_iterator horizon =
+        materialMap_.find("horizon");
+    if (horizon != materialMap_.end()) {
+        horizonSkyline_ = deriveSkyline(*horizon->second);
+    } else {
+        horizonSkyline_.clear();
     }
-
-    rockMaterials_.clear();
-    for (int i = 0; i < 4; ++i) {
-        rockMaterials_.push_back(RockGenerator()
-            .setSize(50, 40)
-            .setFormat(PixelFormat::ARGB8888)
-            .setSeed(2000u + i * 93u)
-            .setBaseColor(Color(0.55f, 0.55f, 0.55f, 1.0f))
-            .setRockCount(4)
-            .setRockRadius(16)
-            .build());
-    }
-
-    houseMaterial_ = HouseGenerator()
-        .setSize(90, 90)
-        .setFormat(PixelFormat::ARGB8888)
-        .setSeed(3000u)
-        .setBaseColor(Color(0.9f, 0.85f, 0.6f, 1.0f))
-        .setDetailColor(Color(0.65f, 0.25f, 0.2f, 1.0f))
-        .setWallSize(55, 45)
-        .setRoofHeight(28)
-        .build();
-
-    cloudMaterials_.clear();
-    for (int i = 0; i < kCloudMaterialCount; ++i) {
-        cloudMaterials_.push_back(CloudGenerator()
-            .setSize(120, 80)
-            .setFormat(PixelFormat::ARGB8888)
-            .setSeed(4000u + i * 211u)
-            .setBaseColor(Color(0.95f, 0.95f, 0.98f, 1.0f))
-            .setPuffCount(5)
-            .setPuffRadius(34)
-            .build());
-    }
-
-    HorizonGenerator horizonGen;
-    horizonGen.setSize(static_cast<int>(kWorldWidth), 120)
-        .setFormat(PixelFormat::ARGB8888)
-        .setSeed(5000u)
-        .setBaseColor(Color(0.28f, 0.72f, 0.28f, 1.0f))
-        .setSkyColor(Color(0.12f, 0.12f, 0.16f, 1.0f))
-        .setHillColor(Color(0.15f, 0.40f, 0.15f, 1.0f))
-        .setHillCount(5)
-        .setHillHeight(25, 70);
-    horizonMaterial_ = horizonGen.build();
-    horizonSkyline_ = horizonGen.buildSkyline();
 
     // buildRenderTree() fills the cloud layout from the scene file, which
     // createShadowCasters() depends on — keep this order.
@@ -233,7 +222,6 @@ void Game2DScene::unload(World* world, ScriptSystem* script) {
     setRootNode(nullptr);
     clouds_.clear();
     cloudNodes_.clear();
-    treeNodes_.clear();
     carNode_ = nullptr;
     overlayNode_ = nullptr;
     if (world) world->clear();
@@ -243,58 +231,18 @@ void Game2DScene::unload(World* world, ScriptSystem* script) {
 
 void Game2DScene::buildRenderTree() {
     // Static layout (horizon, clouds, grass, lake, road, trees, houses,
-    // rocks) comes from the scene file. Materials are resolved by name from
-    // the vectors generated in load().
+    // rocks) comes from the scene file, built from standard node types only.
+    // Materials are resolved by name from the map filled in load().
     SceneLoader loader;
     loader.setMaterialResolver([this](const std::string& name) -> const Material* {
-        if (name == "horizon") return &horizonMaterial_;
-        if (name == "house")   return &houseMaterial_;
-        int idx = -1;
-        if (sscanf(name.c_str(), "cloud%d", &idx) == 1 &&
-            idx >= 0 && idx < (int)cloudMaterials_.size()) return &cloudMaterials_[idx];
-        if (sscanf(name.c_str(), "trunk%d", &idx) == 1 &&
-            idx >= 0 && idx < (int)treeTrunks_.size()) return &treeTrunks_[idx];
-        if (sscanf(name.c_str(), "foliage%d", &idx) == 1 &&
-            idx >= 0 && idx < (int)treeFoliages_.size()) return &treeFoliages_[idx];
-        if (sscanf(name.c_str(), "rock%d", &idx) == 1 &&
-            idx >= 0 && idx < (int)rockMaterials_.size()) return &rockMaterials_[idx];
+        std::map<std::string, const Material*>::const_iterator it = materialMap_.find(name);
+        if (it != materialMap_.end()) return it->second;
         fprintf(stderr, "[GAME2D] Unknown material '%s'\n", name.c_str());
         return nullptr;
-    });
-    // Demo node types registered with the loader:
-    // - "cloud": drifts along a fixed y with its own speed; also registers a
-    //   shadow caster slot and an animation slot.
-    loader.registerType("cloud", [this](const nlohmann::json& j, const SceneLoader& l)
-            -> std::unique_ptr<RenderNode> {
-        const Material* material = l.resolveMaterial(j.value("material", ""));
-        if (!material) return nullptr;
-        CloudDef def;
-        def.baseX = j.value("x", 0.0f);
-        def.y     = j.value("y", 0.0f);
-        def.speed = j.value("speed", 1.0f);
-        clouds_.push_back(def);
-        std::unique_ptr<MaterialNode> node(
-            new MaterialNode(*material, def.baseX, def.y, true));
-        node->sortByCenterY();
-        cloudNodes_.push_back(node.get());
-        return node;
-    });
-    // - "tree": trunk + foliage sprite pair, scaled by perspective.
-    loader.registerType("tree", [this](const nlohmann::json& j, const SceneLoader& l)
-            -> std::unique_ptr<RenderNode> {
-        std::unique_ptr<TreeNode> node(new TreeNode());
-        node->trunk   = l.resolveMaterial(j.value("trunk", ""));
-        node->foliage = l.resolveMaterial(j.value("foliage", ""));
-        node->x = j.value("x", 0.0f);
-        node->y = j.value("y", 0.0f);
-        node->scale = perspectiveScale(node->y);
-        treeNodes_.push_back(node.get());
-        return node;
     });
 
     clouds_.clear();
     cloudNodes_.clear();
-    treeNodes_.clear();
 
     // Locate the scene file regardless of the directory the game was
     // started from (project root, build/, ...).
@@ -314,6 +262,35 @@ void Game2DScene::buildRenderTree() {
     if (!root) {
         fprintf(stderr, "[GAME2D] Scene file missing, using an empty layout\n");
         root.reset(new GroupNode());
+    }
+
+    // Collect the scene's material nodes by role:
+    // - clouds drift in update() and cast cloud shadows;
+    // - trees/houses/rocks cast ground shadows from their node position, so
+    //   moving them in the editor moves the shadow too;
+    // - trees additionally get perspective-scaled by their ground y.
+    propNodes_.clear();
+    static const float kCloudSpeeds[] = { 1.0f, 0.7f, 1.2f, 0.5f, 0.9f, 1.1f };
+    const std::vector<std::pair<std::string, MaterialNode*> >& mats =
+        loader.materialNodes();
+    for (size_t i = 0; i < mats.size(); ++i) {
+        const std::string& name = mats[i].first;
+        MaterialNode* node = mats[i].second;
+        if (name.compare(0, 5, "cloud") == 0) {
+            CloudDef def;
+            def.baseX = node->getX();
+            def.y = node->getY();
+            const size_t cloudIndex = clouds_.size();
+            def.speed = cloudIndex < sizeof(kCloudSpeeds) / sizeof(kCloudSpeeds[0])
+                            ? kCloudSpeeds[cloudIndex] : 1.0f;
+            clouds_.push_back(def);
+            cloudNodes_.push_back(node);
+        } else if (name.compare(0, 4, "tree") == 0) {
+            node->setScale(perspectiveScale(node->getY()));
+            propNodes_.push_back(node);
+        } else if (name == "house" || name.compare(0, 4, "rock") == 0) {
+            propNodes_.push_back(node);
+        }
     }
 
     // Dynamic nodes below are attached in code.
@@ -570,16 +547,23 @@ void Game2DScene::drawGroundShadows(DrawBatch& batch) {
     Vec2 shadowDir = cachedLightDir_ * -1.0f;
     if (shadowDir.y <= 0.0f) return;
 
-    for (size_t i = 0; i < treeNodes_.size(); ++i) {
-        const TreeNode* tree = static_cast<const TreeNode*>(treeNodes_[i]);
-        float s = perspectiveScale(tree->y);
-        SceneFunction::drawShadow(batch, tree->x, tree->y + 40.0f,
-                                  32.0f * s, 10.0f * s, 0.0f,
+    // Trees, houses and rocks: shadow derived from the node's position,
+    // material size and perspective scale (baseOffsetY reaches from the node
+    // origin down to the sprite base).
+    for (size_t i = 0; i < propNodes_.size(); ++i) {
+        const MaterialNode* node = propNodes_[i];
+        const Material* mat = node->getMaterial();
+        if (!mat || mat->width <= 0) continue;
+        const float s = node->getScale();
+        const float w = static_cast<float>(mat->width) * s;
+        const float h = static_cast<float>(mat->height); // unscaled: the
+        // sprite base stays at the pivot regardless of scale
+        const float cx = node->isCentered() ? node->getX() : node->getX() + w * 0.5f;
+        const float cy = node->isCentered() ? node->getY() : node->getY() + h * 0.5f;
+        SceneFunction::drawShadow(batch, cx, cy,
+                                  w * 0.55f, w * 0.18f, h * 0.5f,
                                   shadowDir);
     }
-    SceneFunction::drawShadow(batch,  560,  360, 48.0f, 16.0f, 45.0f, shadowDir);
-    SceneFunction::drawShadow(batch, 2100,  480, 48.0f, 16.0f, 45.0f, shadowDir);
-    SceneFunction::drawShadow(batch, 1050,  520, 34.0f, 12.0f, 30.0f, shadowDir);
 }
 
 void Game2DScene::draw3DCar(DrawBatch& batch, float x, float y) {

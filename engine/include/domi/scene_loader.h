@@ -6,11 +6,14 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace domi {
 
 class GroupNode;
 class Material;
+class MaterialNode;
 class RenderNode;
 
 // Loads a RenderNode tree from a JSON scene file.
@@ -64,6 +67,13 @@ public:
         return it != ids_.end() ? it->second : nullptr;
     }
 
+    // Every "material" node built during the last load, paired with the
+    // material name it referenced. Lets scenes react to placement (e.g.
+    // attaching shadow casters to houses/rocks) without hardcoding positions.
+    const std::vector<std::pair<std::string, MaterialNode*> >& materialNodes() const {
+        return materialNodes_;
+    }
+
 private:
     std::unique_ptr<RenderNode> buildNode(const nlohmann::json& j);
     void buildChildren(const nlohmann::json& j, GroupNode& parent);
@@ -72,6 +82,7 @@ private:
     MaterialResolver resolver_;
     std::unordered_map<std::string, NodeFactory> factories_;
     std::unordered_map<std::string, RenderNode*> ids_;
+    std::vector<std::pair<std::string, MaterialNode*> > materialNodes_;
 };
 
 } // namespace domi

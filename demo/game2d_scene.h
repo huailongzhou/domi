@@ -6,6 +6,8 @@
 #include "domi/math.h"
 #include "domi/material.h"
 #include "domi/camera2d.h"
+#include <map>
+#include <string>
 #include <vector>
 
 namespace domi {
@@ -65,18 +67,20 @@ private:
     domi::Entity sunEntity_;
     std::vector<domi::Entity> cloudEntities_;
 
-    std::vector<domi::Material> treeTrunks_;
-    std::vector<domi::Material> treeFoliages_;
-    std::vector<domi::Material> cloudMaterials_;
-    std::vector<domi::Material> rockMaterials_;
-    domi::Material houseMaterial_;
-    domi::Material horizonMaterial_;
+    // All baked materials from assets/materials/, loaded by file name.
+    std::vector<domi::Material> materials_;
     std::vector<int> horizonSkyline_; // texture-local hill-top y per x column
+
+    // Material name (as used in the scene file) -> loaded material.
+    // Built once in load() after the vector above is final.
+    std::map<std::string, const domi::Material*> materialMap_;
 
     // Layout data filled from the scene file (assets/scenes/game2d.json).
     struct CloudDef { float baseX; float y; float speed; };
     std::vector<CloudDef> clouds_;
-    std::vector<domi::RenderNode*> treeNodes_; // TreeNode*, for ground shadows
+    // Tree/house/rock material nodes from the scene file; their ground
+    // shadows follow each node's position, size and perspective scale.
+    std::vector<const domi::MaterialNode*> propNodes_;
 
     // Dynamic render nodes that are animated in update().
     std::vector<domi::MaterialNode*> cloudNodes_;
@@ -95,6 +99,8 @@ private:
     void updateRenderNodes();
     domi::Vec2 cloudPosition(int i) const;
     float perspectiveScale(float y) const;
+    // Loads every baked texture in assets/materials/ into materialMap_.
+    void loadMaterials();
 
     void drawGroundShadows(domi::DrawBatch& batch);
     void draw3DCar(domi::DrawBatch& batch, float x, float y);

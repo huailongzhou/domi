@@ -227,14 +227,10 @@ public:
         : material_(&material), x_(x), y_(y), centered_(centered) {}
 
     void getYRange(float& y1, float& y2) const override {
-        float dy = y_;
-        float h = 0.0f;
-        if (material_ && material_->width > 0) {
-            h = static_cast<float>(material_->height);
-            if (centered_) dy -= h * 0.5f;
-        }
-        y1 = dy;
-        y2 = dy + h;
+        const float h = scaledHeight();
+        const float bottom = pivotY();
+        y1 = bottom - h;
+        y2 = bottom;
     }
 
     void build(RenderList& list, RenderLayer layer) const override {
@@ -245,16 +241,52 @@ public:
             dx -= material_->width * 0.5f;
             dy -= material_->height * 0.5f;
         }
-        list.drawMaterial(layer, sortKey(), dx, dy, *material_);
+        const float key = sortKey();
+        if (scale_ == 1.0f) {
+            list.drawMaterial(layer, key, dx, dy, *material_);
+            return;
+        }
+        // Scale about the sprite's bottom-center pivot so feet/roots stay
+        // planted (used for perspective scaling of scene props).
+        const float px = pivotX();
+        const float py = pivotY();
+        list.save(layer, key);
+        list.translate(layer, key, px, py);
+        list.scale(layer, key, scale_, scale_);
+        list.translate(layer, key, -px, -py);
+        list.drawMaterial(layer, key, dx, dy, *material_);
+        list.restore(layer, key);
     }
 
     void setPosition(float x, float y) { x_ = x; y_ = y; }
     void setCentered(bool c) { centered_ = c; }
+    void setScale(float s) { scale_ = s; }
+
+    float getX() const { return x_; }
+    float getY() const { return y_; }
+    bool isCentered() const { return centered_; }
+    float getScale() const { return scale_; }
+    const Material* getMaterial() const { return material_; }
 
 private:
+    // Bottom-center pivot in world coordinates.
+    float pivotX() const {
+        if (!material_) return x_;
+        return centered_ ? x_ : x_ + material_->width * 0.5f;
+    }
+    float pivotY() const {
+        if (!material_) return y_;
+        return centered_ ? y_ + material_->height * 0.5f
+                         : y_ + material_->height;
+    }
+    float scaledHeight() const {
+        return material_ ? material_->height * scale_ : 0.0f;
+    }
+
     const Material* material_;
     float x_, y_;
     bool centered_;
+    float scale_ = 1.0f;
 };
 
 // A recorded path (moveTo/lineTo/curves/close) that can be filled and/or stroked.

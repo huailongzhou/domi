@@ -3,6 +3,7 @@
 
 #include "domi/math.h"
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace domi {
@@ -17,6 +18,12 @@ enum class PixelFormat {
 
 // A generated 2D material: width x height pixels in the requested format.
 struct Material {
+    // Optional stable identifier (e.g. the name in a scene file). When set,
+    // Canvas2D::drawMaterialCached keys its texture cache by this id instead
+    // of the object's address, so the cache survives the Material being
+    // moved, copied or regenerated in place.
+    std::string id;
+
     int width = 0;
     int height = 0;
     PixelFormat format = PixelFormat::ARGB8888;
