@@ -12,10 +12,10 @@ if(APPLE)
 endif()
 
 # Paths to installed dependencies
-set(SDL3_ROOT "${CMAKE_SOURCE_DIR}/sdl3" CACHE PATH "SDL3 install prefix")
-set(WAMR_ROOT "${CMAKE_SOURCE_DIR}/wamr" CACHE PATH "WAMR install prefix")
-set(FREETYPE_ROOT "${CMAKE_SOURCE_DIR}/freetype" CACHE PATH "FreeType install prefix")
-set(FREETYPE_MINGW_ROOT "${CMAKE_SOURCE_DIR}/freetype-mingw" CACHE PATH "FreeType MinGW install prefix")
+set(SDL3_ROOT "${CMAKE_SOURCE_DIR}/third_party/sdl3" CACHE PATH "SDL3 install prefix")
+set(WAMR_ROOT "${CMAKE_SOURCE_DIR}/third_party/wamr" CACHE PATH "WAMR install prefix")
+set(FREETYPE_ROOT "${CMAKE_SOURCE_DIR}/third_party/freetype" CACHE PATH "FreeType install prefix")
+set(FREETYPE_MINGW_ROOT "${CMAKE_SOURCE_DIR}/third_party/freetype-mingw" CACHE PATH "FreeType MinGW install prefix")
 
 # Find SDL3
 find_package(SDL3 REQUIRED PATHS ${SDL3_ROOT} NO_DEFAULT_PATH)

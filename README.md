@@ -24,8 +24,15 @@ A small C++11 game engine experiment built on top of SDL3, using WebAssembly (WA
 ├── script_api/        # `domi_api.h` exposed to scripts
 ├── main.cpp           # Executable entry point and sample scenes
 ├── CMakeLists.txt     # Build configuration
-├── sdl3/              # Installed SDL3 prefix
-├── wamr/              # Installed WAMR (iwasm) prefix
+├── third_party/       # Third-party libraries
+│   ├── clay/          # Clay UI layout library (vendored)
+│   ├── imgui/         # Dear ImGui (vendored, editor only)
+│   ├── sdl3/          # Installed SDL3 prefix (Linux)
+│   ├── sdl3-mingw/    # Installed SDL3 prefix (MinGW)
+│   ├── wamr/          # Installed WAMR (iwasm) prefix (Linux)
+│   ├── wamr-mingw/    # Installed WAMR (iwasm) prefix (MinGW)
+│   ├── freetype/      # Installed FreeType prefix (Linux)
+│   └── freetype-mingw/# Installed FreeType prefix (MinGW)
 └── emsdk/             # Emscripten SDK (used for WASM compilation)
 ```
 
@@ -44,8 +51,9 @@ The default `MainScene` is a small low-poly 3D game:
 - macOS (ARM64) — the current setup is Apple Silicon
 - CMake 3.16+
 - C++11 / C11 compatible compiler
-- SDL3 (installed under `./sdl3`)
-- WAMR / iwasm (installed under `./wamr`)
+- SDL3 (installed under `./third_party/sdl3`)
+- WAMR / iwasm (installed under `./third_party/wamr`)
+- FreeType (installed under `./third_party/freetype`)
 - One of the following WASM compilers:
   - Emscripten (under `./emsdk`)
   - Homebrew LLVM with wasm32-wasi support

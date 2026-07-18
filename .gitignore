@@ -19,23 +19,24 @@ compile_commands.json
 
 # Third-party dependencies (managed separately, not committed)
 /SDL3-3.2.14/
-/sdl3/
 /sdl3-build/
-/sdl3-mingw/
 /sdl3-mingw-build/
-/wamr/
 /wamr-build/
 /wamr-src/
-/wamr-mingw/
 /wamr-mingw-build/
 /wamr-mingw-include/
 /emsdk/
 /wasm-micro-runtime-WAMR-2.4.3/
-/freetype/
 /freetype-build/
-/freetype-mingw/
 /freetype-mingw-build/
 /freetype-2.13.2/
+# Prebuilt dependency install prefixes (kept under third_party/, not committed)
+/third_party/sdl3/
+/third_party/sdl3-mingw/
+/third_party/wamr/
+/third_party/wamr-mingw/
+/third_party/freetype/
+/third_party/freetype-mingw/
 
 # Downloaded archives
 *.tar.gz

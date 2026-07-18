@@ -45,7 +45,7 @@ SDL_ARCHIVE="SDL3-${SDL_VERSION}.tar.gz"
 SDL_SRC="SDL3-${SDL_VERSION}"
 SDL_URL="https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/${SDL_ARCHIVE}"
 
-if [ -f "$ROOT/sdl3/lib/libSDL3.dylib" ] || [ -f "$ROOT/sdl3/lib/libSDL3.so" ]; then
+if [ -f "$ROOT/third_party/sdl3/lib/libSDL3.dylib" ] || [ -f "$ROOT/third_party/sdl3/lib/libSDL3.so" ]; then
     echo "[setup] SDL3 already installed, skipping"
 else
     if [ ! -d "$SDL_SRC" ]; then
@@ -56,7 +56,7 @@ else
     mkdir -p sdl3-build
     cd sdl3-build
     cmake "../$SDL_SRC" \
-        -DCMAKE_INSTALL_PREFIX="$ROOT/sdl3" \
+        -DCMAKE_INSTALL_PREFIX="$ROOT/third_party/sdl3" \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DSDL_EXAMPLES=OFF \
         -DSDL_TESTS=OFF
@@ -72,7 +72,7 @@ WAMR_ARCHIVE="WAMR-${WAMR_VERSION}.tar.gz"
 WAMR_SRC="wasm-micro-runtime-WAMR-${WAMR_VERSION}"
 WAMR_URL="https://github.com/bytecodealliance/wasm-micro-runtime/archive/refs/tags/WAMR-${WAMR_VERSION}.tar.gz"
 
-if [ -f "$ROOT/wamr/lib/libiwasm.a" ]; then
+if [ -f "$ROOT/third_party/wamr/lib/libiwasm.a" ]; then
     echo "[setup] WAMR already installed, skipping"
 else
     if [ ! -d "$WAMR_SRC" ]; then
@@ -83,7 +83,7 @@ else
     mkdir -p wamr-build
     cd wamr-build
     cmake "../$WAMR_SRC/product-mini/platforms/${WAMR_PLATFORM}" \
-        -DCMAKE_INSTALL_PREFIX="$ROOT/wamr" \
+        -DCMAKE_INSTALL_PREFIX="$ROOT/third_party/wamr" \
         -DWAMR_BUILD_PLATFORM="${WAMR_PLATFORM}" \
         -DWAMR_BUILD_INTERP=1 \
         -DWAMR_BUILD_FAST_INTERP=1 \
@@ -110,7 +110,7 @@ fi
 mkdir -p freetype-build
 cd freetype-build
 cmake "../$FREETYPE_SRC" \
-    -DCMAKE_INSTALL_PREFIX="$ROOT/freetype" \
+    -DCMAKE_INSTALL_PREFIX="$ROOT/third_party/freetype" \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=OFF \
     -DFT_DISABLE_ZLIB=ON \
@@ -128,7 +128,7 @@ if command -v x86_64-w64-mingw32-gcc-posix >/dev/null 2>&1; then
     mkdir -p freetype-mingw-build
     cd freetype-mingw-build
     cmake "../$FREETYPE_SRC" \
-        -DCMAKE_INSTALL_PREFIX="$ROOT/freetype-mingw" \
+        -DCMAKE_INSTALL_PREFIX="$ROOT/third_party/freetype-mingw" \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=OFF \
         -DFT_DISABLE_ZLIB=ON \
@@ -188,10 +188,10 @@ if [ "$SETUP_EMSDK" = "1" ]; then
 fi
 
 echo "[setup] Done. Dependencies installed to:"
-echo "  SDL3:     $ROOT/sdl3"
-echo "  WAMR:     $ROOT/wamr"
-echo "  FreeType: $ROOT/freetype"
-echo "  FreeType (MinGW): $ROOT/freetype-mingw"
+echo "  SDL3:     $ROOT/third_party/sdl3"
+echo "  WAMR:     $ROOT/third_party/wamr"
+echo "  FreeType: $ROOT/third_party/freetype"
+echo "  FreeType (MinGW): $ROOT/third_party/freetype-mingw"
 echo "  Font:     $ROOT/$FONT_OUT"
 if [ "$SETUP_EMSDK" = "1" ]; then
     echo "  Emscripten: $ROOT/emsdk"
