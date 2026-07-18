@@ -115,6 +115,7 @@ void Renderer::render(World* world, SceneManager* sceneManager, float fps) {
     ctx.lightBuffer = &lightBuffer_;
     ctx.finalBuffer = NULL; // final target is the screen
     ctx.world = world;
+    ctx.scene = scene;
     ctx.camera = findActiveCamera(world);
     ctx.sun = findDirectionalLight(world);
     ctx.uiRoot = scene ? scene->getUIRoot() : NULL;

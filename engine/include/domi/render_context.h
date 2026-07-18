@@ -7,6 +7,7 @@ namespace domi {
 
 class RenderTexture;
 class World;
+class Scene;
 class UIView;
 class UIContext;
 struct Camera2D;
@@ -22,6 +23,7 @@ struct RenderContext {
     RenderTexture* finalBuffer = NULL;
 
     World* world = NULL;
+    Scene* scene = NULL; // active scene, for per-scene UI and camera
     CameraComponent* camera = NULL;
     LightComponent* sun = NULL; // directional / global light
 

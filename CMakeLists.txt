@@ -64,6 +64,8 @@ add_library(domi_engine STATIC
     engine/src/audio/audio.cpp
     engine/src/ui/ui.cpp
     engine/src/ui/font.cpp
+    engine/src/ui/clay_ui.cpp
+    engine/src/ui/clay_layout.c
     tools/generators/material_generator.cpp
     tools/generators/tree_generator.cpp
     tools/generators/cloud_generator.cpp
@@ -80,6 +82,12 @@ target_include_directories(domi_engine PUBLIC
     ${CMAKE_SOURCE_DIR}/tools/generators
     ${WAMR_ROOT}/include
     ${FREETYPE_INCLUDE_DIR}
+)
+
+# clay.h is included only by clay_layout.c (C99); C++ files never see it.
+target_include_directories(domi_engine PRIVATE
+    ${CMAKE_SOURCE_DIR}/third_party/clay
+    ${CMAKE_SOURCE_DIR}/engine/src/ui
 )
 
 target_link_libraries(domi_engine PUBLIC

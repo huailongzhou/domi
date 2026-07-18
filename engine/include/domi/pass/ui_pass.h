@@ -5,13 +5,21 @@
 
 namespace domi {
 
+class ClayUI;
+
 // Renders UI on top of the final composited image, unaffected by lighting.
-// Currently a placeholder; Scene UI can be hooked here in the future.
+// Handles both the legacy UIView tree and the Clay-based UI declared by the
+// active scene via Scene::buildClayUI().
 class UIPass : public RenderPass {
 public:
-    ~UIPass() override {}
+    UIPass() : clayUI_(NULL) {}
+    ~UIPass() override;
 
     void record(CommandBuffer& cmd, RenderContext& ctx) override;
+
+private:
+    // Raw pointer (ClayUI is incomplete here); owned and freed in ui_pass.cpp.
+    ClayUI* clayUI_;
 };
 
 } // namespace domi

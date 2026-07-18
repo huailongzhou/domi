@@ -13,6 +13,7 @@ class RenderList;
 class RenderNode;
 class UIView;
 class UIContext;
+class ClayUI;
 struct Camera2D;
 
 // A Scene is a self-contained collection of entities/components.
@@ -50,6 +51,11 @@ public:
     // UIPass will render this view tree on top of the composited frame.
     virtual UIView* getUIRoot() { return nullptr; }
     virtual UIContext* getUIContext() { return nullptr; }
+
+    // Optional Clay-based UI (third_party/clay layout). Called by UIPass
+    // inside beginFrame/endFrame; declare the UI with CLAY()/CLAY_TEXT() and
+    // return true. Interaction: ui.hovered(id) / ui.clicked(id).
+    virtual bool buildClayUI(ClayUI& ui) { (void)ui; return false; }
 
     // Optional 2D viewport camera. When non-null, world-space passes
     // (Geometry/Shadow/Lighting) render through this transform.
