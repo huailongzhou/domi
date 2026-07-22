@@ -483,25 +483,107 @@ void EditorScene::rebuildTree() {
 }
 
 void EditorScene::fitCamera() {
-    // The preview lives in the top-right of the window, next to the panel.
+    // The preview lives right of the (adjustable) left panel and above the
+    // (adjustable) bottom palette. Fit the whole world into that rect.
     domi::RenderSystem* render = domi::App::instance().getRender();
     const float winW = static_cast<float>(render->getWidth());
     const float winH = static_cast<float>(render->getHeight());
-    previewX_ = 390.0f; // panel is 380 wide + a small gap
-    previewY_ = 0.0f;
+    previewX_ = panelWidth_ + 10.0f;
+    previewY_ = navH_;
     previewW_ = winW - previewX_;
-    previewH_ = previewW_ * 9.0f / 16.0f;
-    if (previewH_ > winH) previewH_ = winH;
+    previewH_ = winH - navH_ - paletteHeight_ - 8.0f;
+    if (previewW_ < 100.0f) previewW_ = 100.0f;
+    if (previewH_ < 100.0f) previewH_ = 100.0f;
 
-    // Fit the whole world into the preview rect.
     const float kWorldW = 2560.0f;
     const float kWorldH = 1440.0f;
+    // Cover: fill the preview rect completely and crop the overflow (no
+    // letterbox bands), instead of fitting the whole world inside it.
     float zoom = previewW_ / kWorldW;
-    if (previewH_ / kWorldH < zoom) zoom = previewH_ / kWorldH;
+    if (previewH_ / kWorldH > zoom) zoom = previewH_ / kWorldH;
     fitZoom_ = zoom;
     camera_.zoom = zoom;
     camera_.offsetX = previewX_ + (previewW_ - kWorldW * zoom) * 0.5f;
     camera_.offsetY = previewY_ + (previewH_ - kWorldH * zoom) * 0.5f;
+    camera_.clip = true;
+    camera_.clipX = previewX_;
+    camera_.clipY = previewY_;
+    camera_.clipW = previewW_;
+    camera_.clipH = previewH_;
+
+    layoutWinW_ = winW;
+    layoutWinH_ = winH;
+    layoutNavH_ = navH_;
+    layoutPanelW_ = panelWidth_;
+    layoutPaletteH_ = paletteHeight_;
+}
+
+void EditorScene::updatePreviewLayout() {
+    domi::RenderSystem* render = domi::App::instance().getRender();
+    const float winW = static_cast<float>(render->getWidth());
+    const float winH = static_cast<float>(render->getHeight());
+    if (winW != layoutWinW_ || winH != layoutWinH_ || navH_ != layoutNavH_ ||
+        panelWidth_ != layoutPanelW_ || paletteHeight_ != layoutPaletteH_) {
+        // Layout changed: refit the camera into the new preview rect.
+        fitCamera();
+    } else {
+        previewX_ = panelWidth_ + 10.0f;
+        previewY_ = navH_;
+        previewW_ = winW - previewX_;
+        previewH_ = winH - navH_ - paletteHeight_ - 8.0f;
+    }
+}
+
+bool EditorScene::handleSplitters() {
+    ImGuiIO& io = ImGui::GetIO();
+    domi::RenderSystem* render = domi::App::instance().getRender();
+    const float winW = static_cast<float>(render->getWidth());
+    const float winH = static_cast<float>(render->getHeight());
+    const float mx = io.MousePos.x;
+    const float my = io.MousePos.y;
+
+    // Vertical splitter: the gap between the left panel and the preview.
+    const bool onV = !dragSplitH_ &&
+        mx >= panelWidth_ && mx <= panelWidth_ + 10.0f && my >= navH_ && my <= winH;
+    // Horizontal splitter: the gap between the preview and the palette.
+    const float splitHY = winH - paletteHeight_ - 8.0f;
+    const bool onH = !dragSplitV_ &&
+        my >= splitHY && my <= splitHY + 8.0f && mx >= previewX_;
+
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (onV) dragSplitV_ = true;
+        else if (onH) dragSplitH_ = true;
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        dragSplitV_ = false;
+        dragSplitH_ = false;
+    }
+
+    if (dragSplitV_) {
+        panelWidth_ = mx;
+        if (panelWidth_ < 200.0f) panelWidth_ = 200.0f;
+        if (panelWidth_ > winW - 300.0f) panelWidth_ = winW - 300.0f;
+    } else if (dragSplitH_) {
+        paletteHeight_ = winH - my;
+        if (paletteHeight_ < 80.0f) paletteHeight_ = 80.0f;
+        if (paletteHeight_ > winH - 200.0f) paletteHeight_ = winH - 200.0f;
+    }
+
+    if (dragSplitV_ || onV) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    else if (dragSplitH_ || onH) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+
+    // Splitter visuals (brightened on hover/drag).
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    const ImU32 vcol = (dragSplitV_ || onV) ? IM_COL32(120, 160, 220, 255)
+                                            : IM_COL32(70, 70, 70, 255);
+    const ImU32 hcol = (dragSplitH_ || onH) ? IM_COL32(120, 160, 220, 255)
+                                            : IM_COL32(70, 70, 70, 255);
+    dl->AddRectFilled(ImVec2(panelWidth_ + 4.0f, navH_),
+                      ImVec2(panelWidth_ + 6.0f, winH), vcol);
+    dl->AddRectFilled(ImVec2(previewX_, splitHY + 3.0f),
+                      ImVec2(previewX_ + previewW_, splitHY + 5.0f), hcol);
+
+    return dragSplitV_ || dragSplitH_;
 }
 
 void EditorScene::clampCamera() {
@@ -820,25 +902,6 @@ void EditorScene::hierarchyChildren(json& node) {
     }
 }
 
-void EditorScene::panelFiles() {
-    ImGui::Text("Scene file:");
-    ImGui::PushItemWidth(-1.0f);
-    ImGui::InputText("##scenepath", pathBuf_, sizeof(pathBuf_));
-    ImGui::PopItemWidth();
-    if (ImGui::Button("Load")) loadFile(pathBuf_);
-    ImGui::SameLine();
-    if (ImGui::Button("Save")) {
-        const std::string target = filePath_.empty() ? pathBuf_ : filePath_;
-        saveFile(target);
-        exportMaterials(target);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Save As")) {
-        saveFile(pathBuf_);
-        exportMaterials(pathBuf_);
-    }
-}
-
 void EditorScene::panelHierarchy() {
     if (doc_.contains("root")) {
         hierarchyChildren(doc_["root"]);
@@ -997,7 +1060,7 @@ void EditorScene::drawNodeProperties() {
     if (posX < previewX_) posX = previewX_ + 4.0f;
     float posY = sy0;
     if (posY > winH - 220.0f) posY = winH - 220.0f;
-    if (posY < 0.0f) posY = 0.0f;
+    if (posY < navH_) posY = navH_;
 
     if (propsCollapsed_) {
         ImGui::SetNextWindowPos(ImVec2(posX, posY), ImGuiCond_Always);
@@ -1024,8 +1087,43 @@ void EditorScene::drawNodeProperties() {
 }
 
 void EditorScene::drawEditor() {
-    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(380, 900), ImGuiCond_Always);
+    domi::RenderSystem* render = domi::App::instance().getRender();
+    const float winW = static_cast<float>(render->getWidth());
+    const float winH = static_cast<float>(render->getHeight());
+
+    // Window-wide navigation bar at the very top.
+    if (ImGui::BeginMainMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            ImGui::Text("Scene file:");
+            ImGui::PushItemWidth(220.0f);
+            ImGui::InputText("##scenepath", pathBuf_, sizeof(pathBuf_));
+            ImGui::PopItemWidth();
+            if (ImGui::MenuItem("Import")) {
+                loadFile(pathBuf_);
+            }
+            if (ImGui::MenuItem("Save")) {
+                const std::string target = filePath_.empty() ? pathBuf_ : filePath_;
+                saveFile(target);
+                exportMaterials(target);
+            }
+            if (ImGui::MenuItem("Save As")) {
+                saveFile(pathBuf_);
+                exportMaterials(pathBuf_);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Export Textures")) {
+                exportMaterials(filePath_.empty() ? pathBuf_ : filePath_);
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMainMenuBar();
+    }
+    navH_ = ImGui::GetFrameHeight();
+
+    updatePreviewLayout();
+
+    ImGui::SetNextWindowPos(ImVec2(0, navH_), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(panelWidth_, winH - navH_), ImGuiCond_Always);
     ImGui::Begin("Domi Editor", nullptr,
                  ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
@@ -1038,22 +1136,17 @@ void EditorScene::drawEditor() {
     if (ImGui::RadioButton("Camera", &mode, 1)) cameraMode_ = true;
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("Files", ImGuiTreeNodeFlags_DefaultOpen)) panelFiles();
     if (ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen)) panelHierarchy();
     if (ImGui::CollapsingHeader("Materials")) panelMaterials();
     ImGui::End();
 
     // Generator palette at the bottom-right, below the preview.
-    {
-        domi::RenderSystem* render = domi::App::instance().getRender();
-        const float winH = static_cast<float>(render->getHeight());
-        ImGui::SetNextWindowPos(ImVec2(previewX_, previewY_ + previewH_ + 8.0f), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(previewW_, winH - previewH_ - 8.0f), ImGuiCond_Always);
-        ImGui::Begin("Generators", nullptr,
-                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-        panelPalette();
-        ImGui::End();
-    }
+    ImGui::SetNextWindowPos(ImVec2(previewX_, winH - paletteHeight_), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(previewW_, paletteHeight_), ImGuiCond_Always);
+    ImGui::Begin("Generators", nullptr,
+                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+    panelPalette();
+    ImGui::End();
 
     // Accept palette drops into the preview area (it is not an ImGui window,
     // so the payload is checked manually on mouse release).
@@ -1069,13 +1162,16 @@ void EditorScene::drawEditor() {
         }
     }
 
+    // Splitters between the panels (draggable panel borders).
+    const bool splitterActive = handleSplitters();
+
     // Outline the preview area so its bounds are visible.
     ImGui::GetBackgroundDrawList()->AddRect(
         ImVec2(previewX_, previewY_),
         ImVec2(previewX_ + previewW_, previewY_ + previewH_),
         IM_COL32(90, 90, 90, 255));
 
-    handlePreviewMouse();
+    if (!splitterActive) handlePreviewMouse();
     drawSelectionHighlight();
     drawNodeProperties();
 }

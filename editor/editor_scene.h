@@ -65,6 +65,21 @@ private:
     float previewH_ = 0.0f;
     float fitZoom_ = 1.0f;
 
+    // Adjustable panel layout: left panel width and bottom palette height,
+    // changed by dragging the splitters between the panels.
+    float panelWidth_ = 380.0f;
+    float paletteHeight_ = 212.0f;
+    // Height of the window-wide top navigation bar (set each frame).
+    float navH_ = 0.0f;
+    bool dragSplitV_ = false;
+    bool dragSplitH_ = false;
+    // Layout values the camera was last fitted to (refit on change).
+    float layoutWinW_ = 0.0f;
+    float layoutWinH_ = 0.0f;
+    float layoutNavH_ = -1.0f;
+    float layoutPanelW_ = -1.0f;
+    float layoutPaletteH_ = -1.0f;
+
     // Mouse interaction mode: design = select/drag elements,
     // camera = pan/zoom the viewport.
     bool cameraMode_ = false;
@@ -97,6 +112,8 @@ private:
 
     // Preview interaction helpers (called from drawEditor).
     void fitCamera();
+    void updatePreviewLayout();
+    bool handleSplitters();
     void clampCamera();
     void handlePreviewMouse();
     void handleCameraMouse();
@@ -111,7 +128,6 @@ private:
     void screenToWorld(float sx, float sy, float& wx, float& wy) const;
 
     // ImGui panels.
-    void panelFiles();
     void panelHierarchy();
     void panelProperties();
     void panelMaterials();

@@ -15,6 +15,15 @@ struct Camera2D {
     float offsetX = 0.0f;
     float offsetY = 0.0f;
     float zoom = 1.0f;
+
+    // Optional output crop in screen/target coordinates: world-space layers
+    // are clipped to this rect while rendering (viewport crop); screen-space
+    // layers (Overlay and above) are not affected.
+    bool clip = false;
+    float clipX = 0.0f;
+    float clipY = 0.0f;
+    float clipW = 0.0f;
+    float clipH = 0.0f;
 };
 
 } // namespace domi

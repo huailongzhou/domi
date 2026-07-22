@@ -182,6 +182,13 @@ void RenderList::flush(Canvas2D* canvas, const Camera2D* camera, RenderLayer wor
         return a.z < b.z;
     });
 
+    // Optional viewport crop: applied to world-space layers only. Set before
+    // the camera transform so the rect is in plain screen coordinates.
+    bool clipActive = camera && camera->clip;
+    if (clipActive) {
+        canvas->setClipRect(camera->clipX, camera->clipY, camera->clipW, camera->clipH);
+    }
+
     bool camActive = camera &&
         (camera->offsetX != 0.0f || camera->offsetY != 0.0f || camera->zoom != 1.0f);
     bool transformed = false;
@@ -199,6 +206,10 @@ void RenderList::flush(Canvas2D* canvas, const Camera2D* camera, RenderLayer wor
         if (transformed && static_cast<int>(items_[i].layer) > static_cast<int>(worldUpTo)) {
             canvas->restore();
             transformed = false;
+            if (clipActive) {
+                canvas->resetClipRect();
+                clipActive = false;
+            }
         }
         if (items_[i].fn) {
             items_[i].fn(canvas);
@@ -207,6 +218,9 @@ void RenderList::flush(Canvas2D* canvas, const Camera2D* camera, RenderLayer wor
 
     if (transformed) {
         canvas->restore();
+    }
+    if (clipActive) {
+        canvas->resetClipRect();
     }
 }
 
