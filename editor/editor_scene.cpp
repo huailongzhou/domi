@@ -1142,7 +1142,7 @@ void EditorScene::panelShadow() {
     }
 
     float dir[2] = { shadowLightDir_.x, shadowLightDir_.y };
-    if (ImGui::SliderFloat2("Light direction", dir, -1.0f, 1.0f)) {
+    if (ImGui::InputFloat2("Light direction", dir)) {
         shadowLightDir_.x = dir[0];
         shadowLightDir_.y = dir[1];
         saveShadowSettings();
