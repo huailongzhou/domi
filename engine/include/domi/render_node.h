@@ -108,6 +108,8 @@ public:
     template<typename... Nodes>
     LayerView& surfaceLayer(Nodes&&... nodes);
     template<typename... Nodes>
+    LayerView& shadowLayer(Nodes&&... nodes);
+    template<typename... Nodes>
     LayerView& objectLayer(Nodes&&... nodes);
     template<typename... Nodes>
     LayerView& canopyLayer(Nodes&&... nodes);
@@ -174,6 +176,10 @@ LayerView& GroupNode::groundLayer(Nodes&&... nodes) {
 template<typename... Nodes>
 LayerView& GroupNode::surfaceLayer(Nodes&&... nodes) {
     return makeLayer(RenderLayer::Surface, std::forward<Nodes>(nodes)...);
+}
+template<typename... Nodes>
+LayerView& GroupNode::shadowLayer(Nodes&&... nodes) {
+    return makeLayer(RenderLayer::Shadow, std::forward<Nodes>(nodes)...);
 }
 template<typename... Nodes>
 LayerView& GroupNode::objectLayer(Nodes&&... nodes) {
@@ -261,12 +267,14 @@ public:
     void setPosition(float x, float y) { x_ = x; y_ = y; }
     void setCentered(bool c) { centered_ = c; }
     void setScale(float s) { scale_ = s; }
+    void setCastShadow(bool c) { castShadow_ = c; }
 
     float getX() const { return x_; }
     float getY() const { return y_; }
     bool isCentered() const { return centered_; }
     float getScale() const { return scale_; }
     const Material* getMaterial() const { return material_; }
+    bool getCastShadow() const { return castShadow_; }
 
 private:
     // Bottom-center pivot in world coordinates.
@@ -287,6 +295,7 @@ private:
     float x_, y_;
     bool centered_;
     float scale_ = 1.0f;
+    bool castShadow_ = true;
 };
 
 // A recorded path (moveTo/lineTo/curves/close) that can be filled and/or stroked.

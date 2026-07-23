@@ -26,6 +26,7 @@ bool layerFromName(const std::string& name, RenderLayer& out) {
     if (name == "background") { out = RenderLayer::Background; return true; }
     if (name == "ground")     { out = RenderLayer::Ground;     return true; }
     if (name == "surface")    { out = RenderLayer::Surface;    return true; }
+    if (name == "shadow")     { out = RenderLayer::Shadow;     return true; }
     if (name == "object")     { out = RenderLayer::Object;     return true; }
     if (name == "canopy")     { out = RenderLayer::Canopy;     return true; }
     if (name == "effect")     { out = RenderLayer::Effect;     return true; }
@@ -126,6 +127,7 @@ std::unique_ptr<RenderNode> SceneLoader::buildNode(const json& j) {
         }
         MaterialNode* matNode = new MaterialNode(*material, getFloat(j, "x"), getFloat(j, "y"),
                                                  j.value("centered", false));
+        matNode->setCastShadow(j.value("castShadow", true));
         materialNodes_.push_back(std::make_pair(name, matNode));
         node.reset(matNode);
     } else if (type == "path") {

@@ -60,6 +60,7 @@ add_library(domi_engine STATIC
     engine/src/scene/scene_loader.cpp
     engine/src/scene/scene_manager.cpp
     engine/src/scene/scene_function.cpp
+    engine/src/physics/physics.cpp
     engine/src/backend/sdl_backend.cpp
     engine/src/audio/audio.cpp
     engine/src/ui/ui.cpp
@@ -90,9 +91,16 @@ target_include_directories(domi_engine PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/src/ui
 )
 
+# Box2D 2.4.2 (vendored source, static library)
+set(BOX2D_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(BOX2D_BUILD_TESTBED OFF CACHE BOOL "" FORCE)
+set(BOX2D_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/box2d)
+
 target_link_libraries(domi_engine PUBLIC
     SDL3::SDL3
     iwasm::vmlib
+    box2d
     ${FREETYPE_LIBRARY}
 )
 

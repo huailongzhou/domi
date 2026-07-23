@@ -285,29 +285,37 @@ void Game2DScene::buildRenderTree() {
                             ? kCloudSpeeds[cloudIndex] : 1.0f;
             clouds_.push_back(def);
             cloudNodes_.push_back(node);
-        } else if (name.compare(0, 4, "tree") == 0) {
-            node->setScale(perspectiveScale(node->getY()));
-            propNodes_.push_back(node);
-        } else if (name == "house" || name.compare(0, 4, "rock") == 0) {
-            propNodes_.push_back(node);
+        } else {
+            if (name.compare(0, 4, "tree") == 0) {
+                node->setScale(perspectiveScale(node->getY()));
+            }
+            if (node->getCastShadow()) {
+                propNodes_.push_back(node);
+            }
         }
     }
 
     // Dynamic nodes below are attached in code.
 
-    // Surface layer: ground-object shadows (explicit z — a multi-caster batch
-    // has no intrinsic y range) and the dashed yellow center line.
-    LayerView& surface = root->surfaceLayer();
-    CustomNode& shadows = surface.addChild<CustomNode>(
+    // Shadow layer: ground-object shadows (trees, houses, rocks). Draws
+    // above terrain/road (Ground/Surface), below objects.
+    root->shadowLayer().addChild<CustomNode>(
         [this](DrawBatch& batch) { drawGroundShadows(batch); });
-    shadows.z = 562.0f;
-    const int dashCount = 24;
+
+    // Surface layer: the dashed yellow center line. Dash count derives from
+    // the road's actual length so it stays consistent if the world resizes.
+    LayerView& surface = root->surfaceLayer();
+    const float roadDx = kWorldWidth + 200.0f;
+    const float roadDy = 400.0f;
+    const float roadLength = std::sqrt(roadDx * roadDx + roadDy * roadDy);
+    const float dashPeriod = 120.0f; // dash + gap, in world pixels
+    const int dashCount = std::max(1, static_cast<int>(roadLength / dashPeriod + 0.5f));
     for (int i = 0; i < dashCount; ++i) {
         float t0 = i / (float)dashCount;
         float t1 = (i + 0.5f) / (float)dashCount;
         surface.addChild<LineNode>(
-            -100 + t0 * (kWorldWidth + 200.0f), 330 + t0 * 400.0f,
-            -100 + t1 * (kWorldWidth + 200.0f), 330 + t1 * 400.0f,
+            -100 + t0 * roadDx, 330 + t0 * roadDy,
+            -100 + t1 * roadDx, 330 + t1 * roadDy,
             Color(0.9f, 0.85f, 0.3f)).lineWidth(4.0f).sortByBottom();
     }
 

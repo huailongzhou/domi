@@ -4,6 +4,7 @@
 #include "domi/render.h"
 #include "domi/canvas2d.h"
 #include "domi/render_node.h"
+#include "domi/scene_function.h"
 #include "domi/material_io.h"
 #include "tree_generator.h"
 #include "cloud_generator.h"
@@ -259,6 +260,7 @@ void EditorScene::loadFile(const std::string& path) {
     }
     doc_ = std::move(doc);
     filePath_ = opened;
+    loadShadowSettings();
     ensureMaterialsSection();
     generateMaterials();
     clearSelection();
@@ -452,7 +454,8 @@ void EditorScene::dropPaletteMaterial(const std::string& genType, float wx, floa
 
     // Add a node for it to the object layer.
     const json node = {{"type", "material"}, {"id", name}, {"material", name},
-                       {"x", wx}, {"y", wy}, {"centered", true}, {"sort", "bottom"}};
+                       {"x", wx}, {"y", wy}, {"centered", true},
+                       {"sort", "bottom"}, {"castShadow", true}};
     bool added = false;
     if (doc_.contains("root") && doc_["root"].contains("children")) {
         for (auto& child : doc_["root"]["children"]) {
@@ -472,6 +475,86 @@ void EditorScene::dropPaletteMaterial(const std::string& genType, float wx, floa
     fprintf(stderr, "[EDITOR] Placed '%s' at (%.0f, %.0f)\n", name.c_str(), wx, wy);
 }
 
+void EditorScene::loadShadowSettings() {
+    shadowEnabled_ = doc_.value("shadowEnabled", true);
+    shadowLightDir_ = domi::Vec2(0.4f, -0.7f);
+    if (doc_.contains("shadowLightDir") && doc_["shadowLightDir"].is_array() &&
+        doc_["shadowLightDir"].size() >= 2) {
+        shadowLightDir_.x = doc_["shadowLightDir"][0].get<float>();
+        shadowLightDir_.y = doc_["shadowLightDir"][1].get<float>();
+    }
+}
+
+void EditorScene::saveShadowSettings() {
+    doc_["shadowEnabled"] = shadowEnabled_;
+    doc_["shadowLightDir"] = { shadowLightDir_.x, shadowLightDir_.y };
+}
+
+// static
+bool EditorScene::findMaterialJson(nlohmann::json& node,
+                                   const std::string& material,
+                                   float x, float y,
+                                   nlohmann::json** out) {
+    const std::string type = node.value("type", "");
+    if (type == "material" && node.value("material", "") == material) {
+        const float nx = node.value("x", 0.0f);
+        const float ny = node.value("y", 0.0f);
+        if (std::abs(nx - x) < 0.001f && std::abs(ny - y) < 0.001f) {
+            *out = &node;
+            return true;
+        }
+    }
+    if (node.contains("children") && node["children"].is_array()) {
+        json& children = node["children"];
+        for (size_t i = 0; i < children.size(); ++i) {
+            if (findMaterialJson(children[i], material, x, y, out)) return true;
+        }
+    }
+    return false;
+}
+
+void EditorScene::refreshShadowCasters(domi::SceneLoader& loader) {
+    shadowCasters_.clear();
+    if (!shadowEnabled_) return;
+
+    const std::vector<std::pair<std::string, domi::MaterialNode*> >& mats =
+        loader.materialNodes();
+    for (size_t i = 0; i < mats.size(); ++i) {
+        domi::MaterialNode* node = mats[i].second;
+        if (!node || !node->getCastShadow()) continue;
+        json* j = nullptr;
+        findMaterialJson(doc_["root"], mats[i].first, node->getX(), node->getY(), &j);
+        ShadowCaster caster;
+        caster.name = mats[i].first;
+        caster.node = node;
+        caster.jsonNode = j;
+        shadowCasters_.push_back(caster);
+    }
+}
+
+void EditorScene::drawEditorShadows(domi::DrawBatch& batch) const {
+    if (!shadowEnabled_ || shadowCasters_.empty()) return;
+
+    domi::Vec2 shadowDir = shadowLightDir_ * -1.0f;
+    shadowDir = shadowDir.normalized();
+    if (shadowDir.y <= 0.0f) return;
+
+    for (size_t i = 0; i < shadowCasters_.size(); ++i) {
+        const domi::MaterialNode* node = shadowCasters_[i].node;
+        const domi::Material* mat = node->getMaterial();
+        if (!mat || mat->width <= 0) continue;
+        const float s = node->getScale();
+        const float w = static_cast<float>(mat->width) * s;
+        const float h = static_cast<float>(mat->height);
+        const float cx = node->isCentered() ? node->getX() : node->getX() + w * 0.5f;
+        const float cy = node->isCentered() ? node->getY() + h * 0.5f
+                                            : node->getY() + h;
+        domi::SceneFunction::drawShadow(batch, cx, cy,
+                                        w * 0.55f, w * 0.18f, h * 0.5f,
+                                        shadowDir);
+    }
+}
+
 void EditorScene::rebuildTree() {
     using namespace domi;
     SceneLoader loader;
@@ -479,7 +562,13 @@ void EditorScene::rebuildTree() {
         std::map<std::string, Material>::iterator it = materials_.find(name);
         return it != materials_.end() ? &it->second : nullptr;
     });
-    setRootNode(loader.loadFromJson(doc_));
+    std::unique_ptr<GroupNode> root = loader.loadFromJson(doc_);
+    refreshShadowCasters(loader);
+    if (root) {
+        root->shadowLayer().addChild<CustomNode>(
+            [this](DrawBatch& batch) { drawEditorShadows(batch); });
+    }
+    setRootNode(std::move(root));
 }
 
 void EditorScene::fitCamera() {
@@ -936,6 +1025,11 @@ void EditorScene::panelProperties() {
             bool c = n["centered"].get<bool>();
             if (ImGui::Checkbox("centered", &c)) { n["centered"] = c; changed = true; }
         }
+        bool cast = n.value("castShadow", true);
+        if (ImGui::Checkbox("cast shadow", &cast)) {
+            n["castShadow"] = cast;
+            changed = true;
+        }
     } else if (type == "rect") {
         changed |= dragFloat("x", n, "x");
         changed |= dragFloat("y", n, "y");
@@ -1039,6 +1133,53 @@ void EditorScene::panelMaterials() {
     }
 }
 
+void EditorScene::panelShadow() {
+    bool enabled = shadowEnabled_;
+    if (ImGui::Checkbox("Shadows enabled", &enabled)) {
+        shadowEnabled_ = enabled;
+        saveShadowSettings();
+        rebuildTree();
+    }
+
+    float dir[2] = { shadowLightDir_.x, shadowLightDir_.y };
+    if (ImGui::SliderFloat2("Light direction", dir, -1.0f, 1.0f)) {
+        shadowLightDir_.x = dir[0];
+        shadowLightDir_.y = dir[1];
+        saveShadowSettings();
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Shadow casters:");
+    if (shadowCasters_.empty()) {
+        ImGui::TextDisabled("No casters. Enable 'cast shadow' on a material node.");
+        return;
+    }
+    for (size_t i = 0; i < shadowCasters_.size(); ++i) {
+        ShadowCaster& caster = shadowCasters_[i];
+        bool cast = true;
+        if (caster.jsonNode) {
+            cast = caster.jsonNode->value("castShadow", true);
+        }
+        ImGui::PushID(static_cast<int>(i));
+        if (ImGui::Checkbox(caster.name.c_str(), &cast)) {
+            if (caster.jsonNode) {
+                (*caster.jsonNode)["castShadow"] = cast;
+                rebuildTree();
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Select")) {
+            if (caster.jsonNode) {
+                selNode_ = caster.jsonNode;
+                selParent_ = nullptr;
+                selIndex_ = -1;
+                propsLastSel_ = nullptr;
+            }
+        }
+        ImGui::PopID();
+    }
+}
+
 void EditorScene::drawNodeProperties() {
     if (!selNode_) {
         propsLastSel_ = nullptr;
@@ -1114,6 +1255,10 @@ void EditorScene::drawEditor() {
             if (ImGui::MenuItem("Export Textures")) {
                 exportMaterials(filePath_.empty() ? pathBuf_ : filePath_);
             }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Shadow")) {
+            panelShadow();
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();

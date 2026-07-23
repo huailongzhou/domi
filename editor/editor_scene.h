@@ -5,9 +5,13 @@
 #include "domi/scene_loader.h"
 #include "domi/material.h"
 #include "domi/camera2d.h"
+#include "domi/math.h"
+#include "domi/draw_batch.h"
 #include <map>
 #include <string>
 #include <vector>
+
+namespace domi { class MaterialNode; }
 
 // A minimal scene editor: loads a scene JSON file (node tree + a
 // "materials" section describing procedural texture generators),
@@ -47,6 +51,18 @@ private:
     // materials; dragging one into the preview creates a scene material node.
     nlohmann::json paletteSpecs_;
     std::map<std::string, domi::Material> paletteMats_;
+
+    // Shadow system state. The editor previews shadows for every material
+    // node whose JSON has castShadow=true. shadowCasters_ is rebuilt together
+    // with the render tree so node pointers stay valid.
+    struct ShadowCaster {
+        std::string name;
+        domi::MaterialNode* node;
+        nlohmann::json* jsonNode;
+    };
+    bool shadowEnabled_ = true;
+    domi::Vec2 shadowLightDir_ = domi::Vec2(0.4f, -0.7f);
+    std::vector<ShadowCaster> shadowCasters_;
 
     // Node selection: pointer into doc_ plus its parent array and index.
     nlohmann::json* selNode_;
@@ -110,6 +126,16 @@ private:
     // Rebuild the render node tree from doc_.
     void rebuildTree();
 
+    // Shadow system helpers.
+    void loadShadowSettings();
+    void saveShadowSettings();
+    void refreshShadowCasters(domi::SceneLoader& loader);
+    void drawEditorShadows(domi::DrawBatch& batch) const;
+    static bool findMaterialJson(nlohmann::json& node,
+                                 const std::string& material,
+                                 float x, float y,
+                                 nlohmann::json** out);
+
     // Preview interaction helpers (called from drawEditor).
     void fitCamera();
     void updatePreviewLayout();
@@ -131,6 +157,7 @@ private:
     void panelHierarchy();
     void panelProperties();
     void panelMaterials();
+    void panelShadow();
     void panelPalette();
     void initPalette();
     void dropPaletteMaterial(const std::string& genType, float wx, float wy);

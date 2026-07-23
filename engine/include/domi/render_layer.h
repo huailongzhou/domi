@@ -9,6 +9,7 @@ enum class RenderLayer {
     Background = 0,   // sky, horizon, far scenery
     Ground     = 100, // terrain, grass, water
     Surface    = 200, // roads, paths, floor markings
+    Shadow     = 250, // ground shadows (above terrain/roads, below objects)
     Object     = 300, // props, vehicles, buildings, characters
     Canopy     = 400, // foliage, roofs, anything above objects
     Effect     = 500, // particles, lights, screen-space effects
