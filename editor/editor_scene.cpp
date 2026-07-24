@@ -136,6 +136,35 @@ domi::Material generateFromSpec(const json& spec) {
     return Material();
 }
 
+// Shared editor controls for a procedural generator spec.
+bool editGeneratorSpec(json& spec) {
+    bool changed = false;
+    changed |= dragInt("seed", spec, "seed");
+    changed |= dragInt("w", spec, "w");
+    changed |= dragInt("h", spec, "h");
+    changed |= colorEdit("base", spec, "base");
+    const std::string gen = spec.value("generator", "");
+    if (gen == "cloud") {
+        changed |= dragInt("puffs", spec, "puffs");
+        changed |= dragInt("puffRadius", spec, "puffRadius");
+    } else if (gen == "rock") {
+        changed |= dragInt("rocks", spec, "rocks");
+        changed |= dragInt("rockRadius", spec, "rockRadius");
+    } else if (gen == "house") {
+        changed |= colorEdit("detail", spec, "detail");
+        changed |= dragInt("wallW", spec, "wallW");
+        changed |= dragInt("wallH", spec, "wallH");
+        changed |= dragInt("roofH", spec, "roofH");
+    } else if (gen == "tree") {
+        changed |= colorEdit("highlight", spec, "highlight");
+        changed |= colorEdit("detail", spec, "detail");
+        changed |= dragInt("trunkW", spec, "trunkW");
+        changed |= dragInt("trunkH", spec, "trunkH");
+        changed |= dragInt("foliageRadius", spec, "foliageRadius");
+    }
+    return changed;
+}
+
 } // namespace
 
 namespace {
@@ -369,7 +398,7 @@ void EditorScene::initPalette() {
 void EditorScene::panelPalette() {
     static const char* kTypes[] = { "house", "rock", "tree", "cloud" };
     domi::Canvas2D* canvas = domi::App::instance().getRender()->getCanvas2D();
-    ImGui::TextDisabled("Drag an image into the preview to place it:");
+    ImGui::TextDisabled("Drag an image into the preview to place it. Click an image to edit:");
     for (int i = 0; i < 4; ++i) {
         const char* type = kTypes[i];
         if (i > 0) ImGui::SameLine(0.0f, 28.0f);
@@ -391,40 +420,22 @@ void EditorScene::panelPalette() {
                 ImGui::Text("%s", type);
                 ImGui::EndDragDropSource();
             }
+            if (ImGui::IsItemClicked()) {
+                ImGui::OpenPopup("properties");
+            }
             ImGui::GetWindowDrawList()->AddImage(
                 (ImTextureID)handle, imgPos, ImVec2(imgPos.x + 72, imgPos.y + 72));
-        }
 
-        json& spec = paletteSpecs_[type];
-        ImGui::PushItemWidth(150.0f);
-        bool changed = false;
-        changed |= dragInt("seed", spec, "seed");
-        changed |= dragInt("w", spec, "w");
-        changed |= dragInt("h", spec, "h");
-        changed |= colorEdit("base", spec, "base");
-        const std::string gen = spec.value("generator", "");
-        if (gen == "cloud") {
-            changed |= dragInt("puffs", spec, "puffs");
-            changed |= dragInt("puffRadius", spec, "puffRadius");
-        } else if (gen == "rock") {
-            changed |= dragInt("rocks", spec, "rocks");
-            changed |= dragInt("rockRadius", spec, "rockRadius");
-        } else if (gen == "house") {
-            changed |= colorEdit("detail", spec, "detail");
-            changed |= dragInt("wallW", spec, "wallW");
-            changed |= dragInt("wallH", spec, "wallH");
-            changed |= dragInt("roofH", spec, "roofH");
-        } else if (gen == "tree") {
-            changed |= colorEdit("highlight", spec, "highlight");
-            changed |= colorEdit("detail", spec, "detail");
-            changed |= dragInt("trunkW", spec, "trunkW");
-            changed |= dragInt("trunkH", spec, "trunkH");
-            changed |= dragInt("foliageRadius", spec, "foliageRadius");
-        }
-        ImGui::PopItemWidth();
-        if (changed) {
-            paletteMats_[type] = generateFromSpec(spec);
-            if (canvas) canvas->uploadMaterial(key.c_str(), paletteMats_[type]);
+            if (ImGui::BeginPopup("properties")) {
+                ImGui::Text("%s properties", type);
+                ImGui::Separator();
+                json& spec = paletteSpecs_[type];
+                if (editGeneratorSpec(spec)) {
+                    paletteMats_[type] = generateFromSpec(spec);
+                    if (canvas) canvas->uploadMaterial(key.c_str(), paletteMats_[type]);
+                }
+                ImGui::EndPopup();
+            }
         }
         ImGui::EndGroup();
         ImGui::PopID();
@@ -1154,29 +1165,38 @@ void EditorScene::panelShadow() {
         ImGui::TextDisabled("No casters. Enable 'cast shadow' on a material node.");
         return;
     }
-    for (size_t i = 0; i < shadowCasters_.size(); ++i) {
-        ShadowCaster& caster = shadowCasters_[i];
-        bool cast = true;
-        if (caster.jsonNode) {
-            cast = caster.jsonNode->value("castShadow", true);
-        }
-        ImGui::PushID(static_cast<int>(i));
-        if (ImGui::Checkbox(caster.name.c_str(), &cast)) {
+    float availW = ImGui::GetContentRegionAvail().x;
+    const float kMinColW = 120.0f;
+    int cols = static_cast<int>(availW / kMinColW);
+    if (cols < 1) cols = 1;
+
+    if (ImGui::BeginTable("CasterTable", cols, ImGuiTableFlags_SizingFixedFit)) {
+        for (size_t i = 0; i < shadowCasters_.size(); ++i) {
+            ImGui::TableNextColumn();
+            ShadowCaster& caster = shadowCasters_[i];
+            bool cast = true;
             if (caster.jsonNode) {
-                (*caster.jsonNode)["castShadow"] = cast;
-                rebuildTree();
+                cast = caster.jsonNode->value("castShadow", true);
             }
-        }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Select")) {
-            if (caster.jsonNode) {
-                selNode_ = caster.jsonNode;
-                selParent_ = nullptr;
-                selIndex_ = -1;
-                propsLastSel_ = nullptr;
+            ImGui::PushID(static_cast<int>(i));
+            if (ImGui::Checkbox(caster.name.c_str(), &cast)) {
+                if (caster.jsonNode) {
+                    (*caster.jsonNode)["castShadow"] = cast;
+                    rebuildTree();
+                }
             }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Select")) {
+                if (caster.jsonNode) {
+                    selNode_ = caster.jsonNode;
+                    selParent_ = nullptr;
+                    selIndex_ = -1;
+                    propsLastSel_ = nullptr;
+                }
+            }
+            ImGui::PopID();
         }
-        ImGui::PopID();
+        ImGui::EndTable();
     }
 }
 
@@ -1257,10 +1277,6 @@ void EditorScene::drawEditor() {
             }
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("Shadow")) {
-            panelShadow();
-            ImGui::EndMenu();
-        }
         ImGui::EndMainMenuBar();
     }
     navH_ = ImGui::GetFrameHeight();
@@ -1285,12 +1301,22 @@ void EditorScene::drawEditor() {
     if (ImGui::CollapsingHeader("Materials")) panelMaterials();
     ImGui::End();
 
-    // Generator palette at the bottom-right, below the preview.
+    // Bottom toolbox (Generators + Shadow) below the preview.
     ImGui::SetNextWindowPos(ImVec2(previewX_, winH - paletteHeight_), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(previewW_, paletteHeight_), ImGuiCond_Always);
-    ImGui::Begin("Generators", nullptr,
+    ImGui::Begin("Toolbox", nullptr,
                  ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-    panelPalette();
+    if (ImGui::BeginTabBar("ToolboxTabs")) {
+        if (ImGui::BeginTabItem("Generators")) {
+            panelPalette();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Shadow")) {
+            panelShadow();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
     ImGui::End();
 
     // Accept palette drops into the preview area (it is not an ImGui window,
