@@ -85,9 +85,17 @@ public:
                              RenderTextureFormat format) override;
     void destroyRenderTarget(void* handle) override;
 
-    bool lock3DTarget(void** pixels, int* pitch) override;
-    void unlock3DTarget() override;
-    void present3DTarget(int x, int y, int w, int h) override;
+    void begin3D() override;
+    void end3D() override;
+    void fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
+                        float za, float zb, float zc,
+                        const Color& color) override;
+    void fillAffineRect3D(const Vec2& origin, const Vec2& size,
+                          const Affine2D& transform, float z,
+                          const Color& color) override;
+    void fillQuad3D(const Vec2& p0, const Vec2& p1, const Vec2& p2,
+                    const Vec2& p3, float z,
+                    const Color& color) override;
 
     // IInputBackend
     bool init() override;
@@ -115,8 +123,8 @@ public:
 private:
     SDL_Window* window_;
     SDL_Renderer* renderer_;
+    SDL_Texture* whiteTexture_;
     SDL_GPUDevice* gpuDevice_;
-    SDL_Texture* target3D_;
     bool gpuClaimed_;
     int width_, height_;
     RenderTexture* currentTarget_;
@@ -137,7 +145,23 @@ private:
 
     std::unique_ptr<MaterialCache> materialCache_;
 
+    // 3D software rasterizer state (moved here from Canvas2D so the SDL backend
+    // owns all triangle rasterization code).
+    SDL_Texture* target3D_;
+    void* lockedPixels3D_;
+    int lockedPitch3D_;
+    bool in3D_;
+    std::vector<float> depthBuffer3D_;
+    std::vector<int> pairStamp3D_;
+    int pairId3D_;
+    int present3DX0_, present3DY0_, present3DX1_, present3DY1_;
+    int drawable3DW_, drawable3DH_;
+
     void ensure3DTarget();
+    void resize3DBuffers(int w, int h);
+    void rasterizeTriangle(const Vec2& a, const Vec2& b, const Vec2& c,
+                           float za, float zb, float zc,
+                           const Color& color);
 };
 
 } // namespace domi

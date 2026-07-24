@@ -129,12 +129,18 @@ public:
     void setClipRect(float x, float y, float w, float h);
     void resetClipRect();
 
-    // 3D software rasterizer with z-buffer.
-    // Call begin3D() before, end3D() after drawing 3D triangles.
+    // 3D drawing primitives. The actual rasterization lives in the backend.
+    // Call begin3D() before, end3D() after drawing 3D primitives for one frame.
     void begin3D();
     void end3D();
     void fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
                         float za, float zb, float zc, const Color& color);
+    void fillAffineRect3D(const Vec2& origin, const Vec2& size,
+                          const Affine2D& transform, float z,
+                          const Color& color);
+    void fillQuad3D(const Vec2& p0, const Vec2& p1, const Vec2& p2,
+                    const Vec2& p3, float z,
+                    const Color& color);
     void fillCube3D(float cx, float cy, float size, float rotX, float rotY,
                     float rotZ = 0.0f, const Color& color = Color(1, 1, 1, 1));
     void fillBox3D(float cx, float cy, float sx, float sy, float sz,
@@ -162,20 +168,6 @@ private:
     RenderTexture* currentTarget_;
     int width_;
     int height_;
-
-    bool in3D_;
-    void* lockedPixels_;
-    int lockedPitch_;
-    std::vector<float> depthBuffer_;
-    // Per-pixel stamp of the 3D pair that last wrote the pixel. The z-test
-    // treats only pixels stamped by the current pair as valid depth —
-    // everything else counts as "cleared", so the depth/pixel buffers never
-    // need explicit clearing. end3D zeroes unstamped pixels inside the
-    // presented region so stale colors don't show through.
-    std::vector<int> pairStamp3D_;
-    int pairId3D_;
-    // Bounding box of the pixels touched this pair; presented by end3D.
-    int present3DX0_, present3DY0_, present3DX1_, present3DY1_;
 
     RenderMode renderMode_;
     bool batching_;

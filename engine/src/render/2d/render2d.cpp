@@ -8,6 +8,7 @@
 #include "domi/scene.h"
 #include "domi/renderer.h"
 #include "domi/pass/geometry_pass.h"
+#include "domi/pass/voxel_pass.h"
 #include "domi/pass/shadow_pass.h"
 #include "domi/pass/lighting_pass.h"
 #include "domi/pass/composite_pass.h"
@@ -191,6 +192,7 @@ bool RenderSystem::init() {
 
     // Build the default 2D deferred/compositing pipeline.
     renderer_->addPass(new GeometryPass(NULL));
+    renderer_->addPass(new Voxel3DPass());
     renderer_->addPass(new ShadowPass());
     renderer_->addPass(new LightingPass());
     renderer_->addPass(new CompositePass());

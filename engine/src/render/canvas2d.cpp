@@ -12,16 +12,9 @@ Canvas2D::Canvas2D(IRenderBackend* backend)
       currentTarget_(NULL),
       width_(backend ? backend->getWidth() : 1280),
       height_(backend ? backend->getHeight() : 720),
-      in3D_(false),
-      lockedPixels_(NULL),
-      lockedPitch_(0),
-      pairId3D_(0),
-      present3DX0_(0), present3DY0_(0), present3DX1_(0), present3DY1_(0),
       renderMode_(RenderMode::PAINTER),
       batching_(true),
       pathClosed_(false) {
-    depthBuffer_.assign(width_ * height_, 1.0f);
-    pairStamp3D_.assign(width_ * height_, -1);
 }
 
 Canvas2D::~Canvas2D() {
@@ -541,121 +534,52 @@ void Canvas2D::resetClipRect() {
 }
 
 void Canvas2D::begin3D() {
-    if (!backend_ || in3D_) return;
+    if (!backend_) return;
     flush();
-    if (backend_->lock3DTarget(&lockedPixels_, &lockedPitch_)) {
-        in3D_ = true;
-        // Advance the pair id instead of clearing the depth/pixel buffers:
-        // only pixels stamped with this id hold valid data this pair.
-        ++pairId3D_;
-        if (pairId3D_ < 0) { // wrapped: reset all stamps
-            std::fill(pairStamp3D_.begin(), pairStamp3D_.end(), -1);
-            pairId3D_ = 0;
-        }
-        present3DX0_ = present3DY0_ = present3DX1_ = present3DY1_ = 0;
-    }
+    backend_->begin3D();
 }
 
 void Canvas2D::end3D() {
-    if (!in3D_) return;
-    in3D_ = false;
-
-    // Zero out pixels inside the presented region that this pair did not
-    // write, so stale content from previous pairs doesn't show through.
-    if (lockedPixels_ && present3DX1_ > present3DX0_ && present3DY1_ > present3DY0_) {
-        for (int y = present3DY0_; y < present3DY1_; ++y) {
-            uint8_t* row = (uint8_t*)lockedPixels_ + y * lockedPitch_;
-            int idx = y * width_ + present3DX0_;
-            for (int x = present3DX0_; x < present3DX1_; ++x, ++idx) {
-                if (pairStamp3D_[idx] != pairId3D_) {
-                    *(uint32_t*)(row + (size_t)x * 4) = 0;
-                }
-            }
-        }
-    }
-
-    backend_->unlock3DTarget();
-    lockedPixels_ = NULL;
-    // Present only the region that was touched this pair.
-    backend_->present3DTarget(present3DX0_, present3DY0_,
-                              present3DX1_ - present3DX0_,
-                              present3DY1_ - present3DY0_);
+    if (!backend_) return;
+    backend_->end3D();
 }
 
 void Canvas2D::fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
                               float za, float zb, float zc, const Color& color) {
-    if (!in3D_ || !lockedPixels_) return;
-
-    // The software rasterizer writes pixels directly, so the current 2D
-    // transform (viewport camera, save/scale stacks) must be applied here —
-    // otherwise 3D content would ignore the transform the 2D path honors.
+    if (!backend_) return;
+    // 3D primitives bypass the batched 2D queue, so make sure any pending
+    // batched draws are submitted before we touch the backend directly.
+    flush();
+    // Apply the current 2D transform so 3D content honors the same viewport
+    // camera / save / scale stacks as the 2D path.
     Vec2 ta = state_.transform * a;
     Vec2 tb = state_.transform * b;
     Vec2 tc = state_.transform * c;
+    backend_->fillTriangle3D(ta, tb, tc, za, zb, zc, color);
+}
 
-    float minX = std::min(std::min(ta.x, tb.x), tc.x);
-    float minY = std::min(std::min(ta.y, tb.y), tc.y);
-    float maxX = std::max(std::max(ta.x, tb.x), tc.x);
-    float maxY = std::max(std::max(ta.y, tb.y), tc.y);
+void Canvas2D::fillAffineRect3D(const Vec2& origin, const Vec2& size,
+                                const Affine2D& transform, float z,
+                                const Color& color) {
+    if (!backend_) return;
+    // 3D primitives bypass the batched 2D queue, so make sure any pending
+    // batched draws are submitted before we touch the backend directly.
+    flush();
+    // Compose the caller's affine transform with the current 2D canvas transform.
+    backend_->fillAffineRect3D(origin, size, state_.transform * transform, z, color);
+}
 
-    if (maxX < 0.0f || maxY < 0.0f || minX >= width_ || minY >= height_) return;
-    if (minX < 0.0f) minX = 0.0f;
-    if (minY < 0.0f) minY = 0.0f;
-    if (maxX >= width_) maxX = width_ - 1;
-    if (maxY >= height_) maxY = height_ - 1;
-
-    // Track the bounding box of touched pixels; end3D presents only this.
-    const int bx0 = (int)minX, by0 = (int)minY;
-    const int bx1 = (int)maxX + 1, by1 = (int)maxY + 1;
-    if (present3DX1_ <= present3DX0_ || present3DY1_ <= present3DY0_) {
-        present3DX0_ = bx0; present3DY0_ = by0;
-        present3DX1_ = bx1; present3DY1_ = by1;
-    } else {
-        if (bx0 < present3DX0_) present3DX0_ = bx0;
-        if (by0 < present3DY0_) present3DY0_ = by0;
-        if (bx1 > present3DX1_) present3DX1_ = bx1;
-        if (by1 > present3DY1_) present3DY1_ = by1;
-    }
-
-    Vec3 v0(tc.x - ta.x, tc.y - ta.y, 0.0f);
-    Vec3 v1(tb.x - ta.x, tb.y - ta.y, 0.0f);
-    float dot00 = Vec3::dot(v0, v0);
-    float dot01 = Vec3::dot(v0, v1);
-    float dot11 = Vec3::dot(v1, v1);
-    float denom = dot00 * dot11 - dot01 * dot01;
-    if (denom == 0.0f) return;
-
-    uint8_t cr = (uint8_t)(color.r * 255.0f);
-    uint8_t cg = (uint8_t)(color.g * 255.0f);
-    uint8_t cb = (uint8_t)(color.b * 255.0f);
-    uint8_t ca = (uint8_t)(color.a * 255.0f);
-
-    for (int y = (int)minY; y <= (int)maxY; ++y) {
-        uint8_t* row = (uint8_t*)lockedPixels_ + y * lockedPitch_;
-        for (int x = (int)minX; x <= (int)maxX; ++x) {
-            Vec3 v2((float)x - ta.x, (float)y - ta.y, 0.0f);
-            float dot20 = Vec3::dot(v0, v2);
-            float dot21 = Vec3::dot(v1, v2);
-            float gamma = (dot11 * dot20 - dot01 * dot21) / denom;
-            float beta  = (dot00 * dot21 - dot01 * dot20) / denom;
-            float alpha = 1.0f - gamma - beta;
-            if (alpha < 0.0f || beta < 0.0f || gamma < 0.0f) continue;
-
-            float z = alpha * za + beta * zb + gamma * zc;
-            int idx = y * width_ + x;
-            // A pixel counts as cleared unless this pair already wrote it;
-            // no buffer clearing is needed between pairs.
-            if (pairStamp3D_[idx] != pairId3D_ || z < depthBuffer_[idx]) {
-                pairStamp3D_[idx] = pairId3D_;
-                depthBuffer_[idx] = z;
-                int px = x * 4;
-                row[px + 0] = cr;
-                row[px + 1] = cg;
-                row[px + 2] = cb;
-                row[px + 3] = ca;
-            }
-        }
-    }
+void Canvas2D::fillQuad3D(const Vec2& p0, const Vec2& p1, const Vec2& p2,
+                          const Vec2& p3, float z,
+                          const Color& color) {
+    if (!backend_) return;
+    // 3D primitives bypass the batched 2D queue, so make sure any pending
+    // batched draws are submitted before we touch the backend directly.
+    flush();
+    // Apply the current 2D canvas transform to the four corners.
+    backend_->fillQuad3D(state_.transform * p0, state_.transform * p1,
+                         state_.transform * p2, state_.transform * p3,
+                         z, color);
 }
 
 void Canvas2D::fillCube3D(float cx, float cy, float size, float rotX, float rotY,
@@ -665,8 +589,6 @@ void Canvas2D::fillCube3D(float cx, float cy, float size, float rotX, float rotY
 
 void Canvas2D::fillBox3D(float cx, float cy, float sx, float sy, float sz,
                          float rotX, float rotY, float rotZ, const Color& color) {
-    if (!in3D_) return;
-
     Vec3 v[8] = {
         Vec3(-0.5f * sx, -0.5f * sy, -0.5f * sz), Vec3( 0.5f * sx, -0.5f * sy, -0.5f * sz),
         Vec3( 0.5f * sx,  0.5f * sy, -0.5f * sz), Vec3(-0.5f * sx,  0.5f * sy, -0.5f * sz),
@@ -730,7 +652,7 @@ void Canvas2D::drawMesh3D(float cx, float cy, float scale,
                           const Vec3* vertices, int vertexCount,
                           const int* indices, int triangleCount,
                           const Color& color) {
-    if (!in3D_ || !vertices || vertexCount <= 0 || !indices || triangleCount <= 0) return;
+    if (!vertices || vertexCount <= 0 || !indices || triangleCount <= 0) return;
 
     float cxr = std::cos(rotX), sxr = std::sin(rotX);
     float cyr = std::cos(rotY), syr = std::sin(rotY);

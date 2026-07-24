@@ -7,6 +7,7 @@
 #include "domi/ui/clay_ui.h"
 #include "game2d_scene.h"
 #include "game3d_scene.h"
+#include "voxel_scene.h"
 #include <cstdio>
 
 using namespace domi;
@@ -73,10 +74,14 @@ bool MenuScene::buildClayUI(ClayUI& ui) {
     menuButton(ui, "MENU_3D", "3D Game",
                Color(0.25f, 0.45f, 0.75f), Color(0.35f, 0.57f, 0.86f),
                Color(0.15f, 0.30f, 0.55f));
+    menuButton(ui, "MENU_VOXEL", "Voxel Demo",
+               Color(0.75f, 0.25f, 0.65f), Color(0.86f, 0.35f, 0.75f),
+               Color(0.55f, 0.15f, 0.45f));
     ui.endBox();
 
     if (ui.clicked("MENU_2D")) pendingChoice_ = 2;
     if (ui.clicked("MENU_3D")) pendingChoice_ = 3;
+    if (ui.clicked("MENU_VOXEL")) pendingChoice_ = 4;
     return true;
 }
 
@@ -86,6 +91,7 @@ void MenuScene::update(double dt) {
 
     bool choose2D = pendingChoice_ == 2;
     bool choose3D = pendingChoice_ == 3;
+    bool chooseVoxel = pendingChoice_ == 4;
     pendingChoice_ = 0;
 
     if (input) {
@@ -93,6 +99,8 @@ void MenuScene::update(double dt) {
                    input->isKeyPressed(SDL_SCANCODE_KP_1);
         choose3D = choose3D || input->isKeyPressed(SDL_SCANCODE_2) ||
                    input->isKeyPressed(SDL_SCANCODE_KP_2);
+        chooseVoxel = chooseVoxel || input->isKeyPressed(SDL_SCANCODE_3) ||
+                      input->isKeyPressed(SDL_SCANCODE_KP_3);
     }
 
     if (choose2D) {
@@ -101,5 +109,8 @@ void MenuScene::update(double dt) {
     } else if (choose3D) {
         fprintf(stderr, "[MENU] Starting 3D game\n");
         App::instance().getSceneManager()->setNext(new Game3DScene());
+    } else if (chooseVoxel) {
+        fprintf(stderr, "[MENU] Starting voxel demo\n");
+        App::instance().getSceneManager()->setNext(new VoxelScene());
     }
 }

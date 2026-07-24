@@ -31,6 +31,7 @@ void World::clear() {
     lights_.clear();
     scripts_.clear();
     audios_.clear();
+    voxels_.clear();
     nextEntity_ = 1;
 }
 
@@ -46,6 +47,7 @@ std::vector<Entity> World::queryEntitiesWith(ComponentTypeMask mask) {
         if (e < lights_.size()) has |= 16;
         if (e < scripts_.size() && !scripts_[e].wasmPath.empty()) has |= 32;
         if (e < audios_.size() && !audios_[e].path.empty()) has |= 64;
+        if (e < voxels_.size() && voxels_[e].width > 0) has |= 128;
         if ((has & mask.mask) == mask.mask) result.push_back(e);
     }
     return result;
@@ -77,3 +79,7 @@ template<> void domi::World::ensureCapacity<domi::CameraComponent>(Entity e) { i
 template<> void domi::World::ensureCapacity<domi::LightComponent>(Entity e) { if (e >= lights_.size()) lights_.resize(e + 1); }
 template<> void domi::World::ensureCapacity<domi::ScriptComponent>(Entity e) { if (e >= scripts_.size()) scripts_.resize(e + 1); }
 template<> void domi::World::ensureCapacity<domi::AudioSourceComponent>(Entity e) { if (e >= audios_.size()) audios_.resize(e + 1); }
+template<> void domi::World::ensureCapacity<domi::VoxelComponent>(Entity e) { if (e >= voxels_.size()) voxels_.resize(e + 1); }
+
+template<> domi::VoxelComponent* domi::World::getComponentPool<domi::VoxelComponent>() { return voxels_.empty() ? NULL : &voxels_[0]; }
+template<> size_t domi::World::getPoolSize<domi::VoxelComponent>() const { return voxels_.size(); }

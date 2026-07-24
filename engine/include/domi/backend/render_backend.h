@@ -121,12 +121,32 @@ public:
     // 3D software rasterizer support
     // -----------------------------------------------------------------
 
-    // Lock the full-screen 3D target for CPU writing. Returns true on success.
-    virtual bool lock3DTarget(void** pixels, int* pitch) = 0;
-    virtual void unlock3DTarget() = 0;
+    // Begin/end a 3D drawing block. The backend manages its own full-screen
+    // 3D target, depth buffer, and compositing. These calls bracket all 3D
+    // fill operations for a single frame.
+    virtual void begin3D() = 0;
+    virtual void end3D() = 0;
 
-    // Composite the given region of the 3D target onto the current target.
-    virtual void present3DTarget(int x, int y, int w, int h) = 0;
+    // Fill a single triangle into the 3D target with z-buffering.
+    // Coordinates are already in screen/target space.
+    virtual void fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
+                                float za, float zb, float zc,
+                                const Color& color) = 0;
+
+    // Fill an axis-aligned rectangle (origin..origin+size) transformed by an
+    // affine transform, with a single depth value. The SDL backend triangulates
+    // it; a future 2D hardware backend can draw it directly as an affine rect.
+    virtual void fillAffineRect3D(const Vec2& origin, const Vec2& size,
+                                  const Affine2D& transform, float z,
+                                  const Color& color) = 0;
+
+    // Fill a general screen-space quadrilateral using a single depth value.
+    // This is the primitive used by the voxel renderer: it avoids the
+    // parallelogram approximation of fillAffineRect3D so perspective-distorted
+    // voxel faces line up exactly with their neighbors.
+    virtual void fillQuad3D(const Vec2& p0, const Vec2& p1, const Vec2& p2,
+                            const Vec2& p3, float z,
+                            const Color& color) = 0;
 };
 
 } // namespace domi

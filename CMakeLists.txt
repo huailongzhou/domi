@@ -54,6 +54,8 @@ add_library(domi_engine STATIC
     engine/src/render/pass/lighting_pass.cpp
     engine/src/render/pass/composite_pass.cpp
     engine/src/render/pass/ui_pass.cpp
+    engine/src/render/pass/voxel_pass.cpp
+    engine/src/render/voxel3D/voxel_renderer.cpp
     engine/src/render/render_node.cpp
     engine/src/render/material_io.cpp
     engine/src/scene/scene.cpp
@@ -89,6 +91,7 @@ target_include_directories(domi_engine PUBLIC
 target_include_directories(domi_engine PRIVATE
     ${CMAKE_SOURCE_DIR}/third_party/clay
     ${CMAKE_SOURCE_DIR}/engine/src/ui
+    ${CMAKE_SOURCE_DIR}/engine/src/render/voxel3D
 )
 
 # Box2D 2.4.2 (vendored source, static library)
@@ -111,6 +114,7 @@ add_executable(domi_game
     demo/game3d_scene.cpp
     demo/menu_scene.cpp
     demo/second_scene.cpp
+    demo/voxel_scene.cpp
 )
 target_link_libraries(domi_game PRIVATE domi_engine)
 

@@ -229,11 +229,14 @@ SDL_Texture* uploadMaterialTexture(SDL_Renderer* renderer,
 } // anonymous namespace
 
 SDLBackend::SDLBackend()
-    : window_(NULL), renderer_(NULL), gpuDevice_(NULL), target3D_(NULL),
-      gpuClaimed_(false), width_(0), height_(0), currentTarget_(NULL),
+    : window_(NULL), renderer_(NULL), whiteTexture_(NULL), gpuDevice_(NULL),
+      target3D_(NULL), gpuClaimed_(false), width_(0), height_(0), currentTarget_(NULL),
       mouseX_(0), mouseY_(0), mouseDeltaX_(0), mouseDeltaY_(0),
       scrollX_(0), scrollY_(0), inputInitialized_(false), audioInitialized_(false),
-      materialCache_(new MaterialCache()) {
+      materialCache_(new MaterialCache()),
+      lockedPixels3D_(NULL), lockedPitch3D_(0), in3D_(false), pairId3D_(0),
+      present3DX0_(0), present3DY0_(0), present3DX1_(0), present3DY1_(0),
+      drawable3DW_(0), drawable3DH_(0) {
     memset(keysCurr_, 0, sizeof(keysCurr_));
     memset(keysPrev_, 0, sizeof(keysPrev_));
     memset(mouseCurr_, 0, sizeof(mouseCurr_));
@@ -392,12 +395,43 @@ bool SDLBackend::create(const std::string& title, int width, int height) {
         return false;
     }
 
+    int numDrivers = SDL_GetNumRenderDrivers();
+    fprintf(stderr, "[SDLBackend] Available render drivers: %d\n", numDrivers);
+    for (int i = 0; i < numDrivers; ++i) {
+        fprintf(stderr, "[SDLBackend]   driver %d: %s\n", i, SDL_GetRenderDriver(i));
+    }
+
+    // Try the Vulkan SDL_Renderer backend first. Note: this only changes how
+    // the final 2D output is presented; the voxel 3D path still rasterizes on
+    // the CPU into a locked texture before handing it to SDL.
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "vulkan");
+
     renderer_ = SDL_CreateRenderer(window_, NULL);
+    if (!renderer_) {
+        fprintf(stderr,
+                "[SDLBackend] Vulkan renderer unavailable (%s), falling back\n",
+                SDL_GetError());
+        SDL_ResetHint(SDL_HINT_RENDER_DRIVER);
+        renderer_ = SDL_CreateRenderer(window_, NULL);
+    }
     if (!renderer_) {
         fprintf(stderr, "Failed to create renderer: %s\n", SDL_GetError());
         SDL_DestroyWindow(window_);
         window_ = NULL;
         return false;
+    }
+
+    const char* rendererName = SDL_GetRendererName(renderer_);
+    fprintf(stderr, "[SDLBackend] Selected renderer: %s\n",
+            rendererName ? rendererName : "unknown");
+
+    // Create a 1x1 white texture for color-only geometry draws.
+    whiteTexture_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32,
+                                      SDL_TEXTUREACCESS_STATIC, 1, 1);
+    if (whiteTexture_) {
+        uint32_t white = 0xFFFFFFFF;
+        SDL_UpdateTexture(whiteTexture_, NULL, &white, 4);
+        SDL_SetTextureBlendMode(whiteTexture_, SDL_BLENDMODE_BLEND);
     }
 
     // Use alpha blending for all renderer draw operations so that translucent
@@ -427,6 +461,10 @@ void SDLBackend::destroy() {
         materialCache_->textures.clear();
     }
 
+    if (whiteTexture_) {
+        SDL_DestroyTexture(whiteTexture_);
+        whiteTexture_ = NULL;
+    }
     if (target3D_) {
         SDL_DestroyTexture(target3D_);
         target3D_ = NULL;
@@ -720,24 +758,210 @@ void SDLBackend::ensure3DTarget() {
     }
 }
 
-bool SDLBackend::lock3DTarget(void** pixels, int* pitch) {
-    if (!renderer_ || !pixels || !pitch) return false;
-    ensure3DTarget();
-    if (!target3D_) return false;
-    // No full-buffer clear here: Canvas2D clears only the regions it draws into.
-    return SDL_LockTexture(target3D_, NULL, pixels, pitch);
+void SDLBackend::resize3DBuffers(int w, int h) {
+    if (w <= 0 || h <= 0) return;
+    if (w == drawable3DW_ && h == drawable3DH_) return;
+    depthBuffer3D_.assign((size_t)w * h, 1.0f);
+    pairStamp3D_.assign((size_t)w * h, -1);
+    drawable3DW_ = w;
+    drawable3DH_ = h;
 }
 
-void SDLBackend::unlock3DTarget() {
-    if (target3D_) {
-        SDL_UnlockTexture(target3D_);
+void SDLBackend::begin3D() {
+    if (!renderer_ || in3D_) return;
+    ensure3DTarget();
+    if (!target3D_) return;
+
+    if (SDL_LockTexture(target3D_, NULL, &lockedPixels3D_, &lockedPitch3D_)) {
+        in3D_ = true;
+        ++pairId3D_;
+        if (pairId3D_ < 0) {
+            std::fill(pairStamp3D_.begin(), pairStamp3D_.end(), -1);
+            pairId3D_ = 0;
+        }
+        present3DX0_ = present3DY0_ = present3DX1_ = present3DY1_ = 0;
+
+        int w, h;
+        SDL_GetRenderOutputSize(renderer_, &w, &h);
+        resize3DBuffers(w, h);
     }
 }
 
-void SDLBackend::present3DTarget(int x, int y, int w, int h) {
-    if (!target3D_ || w <= 0 || h <= 0) return;
-    SDL_FRect r = { (float)x, (float)y, (float)w, (float)h };
-    SDL_RenderTexture(renderer_, target3D_, &r, &r);
+void SDLBackend::end3D() {
+    if (!in3D_) return;
+    in3D_ = false;
+
+    if (lockedPixels3D_ && present3DX1_ > present3DX0_ && present3DY1_ > present3DY0_) {
+        for (int y = present3DY0_; y < present3DY1_; ++y) {
+            uint8_t* row = (uint8_t*)lockedPixels3D_ + y * lockedPitch3D_;
+            int idx = y * drawable3DW_ + present3DX0_;
+            for (int x = present3DX0_; x < present3DX1_; ++x, ++idx) {
+                if (pairStamp3D_[idx] != pairId3D_) {
+                    *(uint32_t*)(row + (size_t)x * 4) = 0;
+                }
+            }
+        }
+    }
+
+    if (target3D_) {
+        SDL_UnlockTexture(target3D_);
+    }
+    lockedPixels3D_ = NULL;
+
+    int w = present3DX1_ - present3DX0_;
+    int h = present3DY1_ - present3DY0_;
+    if (target3D_ && w > 0 && h > 0) {
+        SDL_FRect r = { (float)present3DX0_, (float)present3DY0_, (float)w, (float)h };
+        SDL_RenderTexture(renderer_, target3D_, &r, &r);
+    }
+}
+
+void SDLBackend::rasterizeTriangle(const Vec2& a, const Vec2& b, const Vec2& c,
+                                   float za, float zb, float zc,
+                                   const Color& color) {
+    if (!in3D_ || !lockedPixels3D_ || drawable3DW_ <= 0 || drawable3DH_ <= 0) return;
+
+    float minX = std::min(std::min(a.x, b.x), c.x);
+    float minY = std::min(std::min(a.y, b.y), c.y);
+    float maxX = std::max(std::max(a.x, b.x), c.x);
+    float maxY = std::max(std::max(a.y, b.y), c.y);
+
+    if (maxX < 0.0f || maxY < 0.0f || minX >= drawable3DW_ || minY >= drawable3DH_) return;
+    if (minX < 0.0f) minX = 0.0f;
+    if (minY < 0.0f) minY = 0.0f;
+    if (maxX >= drawable3DW_) maxX = drawable3DW_ - 1;
+    if (maxY >= drawable3DH_) maxY = drawable3DH_ - 1;
+
+    const int bx0 = (int)minX, by0 = (int)minY;
+    const int bx1 = (int)maxX + 1, by1 = (int)maxY + 1;
+    if (present3DX1_ <= present3DX0_ || present3DY1_ <= present3DY0_) {
+        present3DX0_ = bx0; present3DY0_ = by0;
+        present3DX1_ = bx1; present3DY1_ = by1;
+    } else {
+        if (bx0 < present3DX0_) present3DX0_ = bx0;
+        if (by0 < present3DY0_) present3DY0_ = by0;
+        if (bx1 > present3DX1_) present3DX1_ = bx1;
+        if (by1 > present3DY1_) present3DY1_ = by1;
+    }
+
+    Vec3 v0(c.x - a.x, c.y - a.y, 0.0f);
+    Vec3 v1(b.x - a.x, b.y - a.y, 0.0f);
+    float dot00 = Vec3::dot(v0, v0);
+    float dot01 = Vec3::dot(v0, v1);
+    float dot11 = Vec3::dot(v1, v1);
+    float denom = dot00 * dot11 - dot01 * dot01;
+    if (denom == 0.0f) return;
+
+    uint8_t cr = (uint8_t)(color.r * 255.0f);
+    uint8_t cg = (uint8_t)(color.g * 255.0f);
+    uint8_t cb = (uint8_t)(color.b * 255.0f);
+    uint8_t ca = (uint8_t)(color.a * 255.0f);
+
+    for (int y = (int)minY; y <= (int)maxY; ++y) {
+        uint8_t* row = (uint8_t*)lockedPixels3D_ + y * lockedPitch3D_;
+        for (int x = (int)minX; x <= (int)maxX; ++x) {
+            Vec3 v2((float)x - a.x, (float)y - a.y, 0.0f);
+            float dot20 = Vec3::dot(v0, v2);
+            float dot21 = Vec3::dot(v1, v2);
+            float gamma = (dot11 * dot20 - dot01 * dot21) / denom;
+            float beta  = (dot00 * dot21 - dot01 * dot20) / denom;
+            float alpha = 1.0f - gamma - beta;
+            if (alpha < 0.0f || beta < 0.0f || gamma < 0.0f) continue;
+
+            float z = alpha * za + beta * zb + gamma * zc;
+            int idx = y * drawable3DW_ + x;
+            if (pairStamp3D_[idx] != pairId3D_ || z < depthBuffer3D_[idx]) {
+                pairStamp3D_[idx] = pairId3D_;
+                depthBuffer3D_[idx] = z;
+                int px = x * 4;
+                row[px + 0] = cr;
+                row[px + 1] = cg;
+                row[px + 2] = cb;
+                row[px + 3] = ca;
+            }
+        }
+    }
+}
+
+void SDLBackend::fillTriangle3D(const Vec2& a, const Vec2& b, const Vec2& c,
+                                float za, float zb, float zc,
+                                const Color& color) {
+    rasterizeTriangle(a, b, c, za, zb, zc, color);
+}
+
+void SDLBackend::fillAffineRect3D(const Vec2& origin, const Vec2& size,
+                                  const Affine2D& transform, float z,
+                                  const Color& color) {
+    (void)z;
+    if (!renderer_) return;
+
+    // GPU path: draw the affine-mapped rectangle directly via SDL_RenderGeometry.
+    // The caller is responsible for depth ordering (e.g. painter's algorithm);
+    // this SDL backend does not perform per-pixel depth testing here.
+    Vec2 p0 = transform * Vec2(origin.x, origin.y);
+    Vec2 p1 = transform * Vec2(origin.x + size.x, origin.y);
+    Vec2 p2 = transform * Vec2(origin.x + size.x, origin.y + size.y);
+    Vec2 p3 = transform * Vec2(origin.x, origin.y + size.y);
+
+    SDL_FColor col = toSDLColor(color);
+    SDL_FPoint zero = { 0.0f, 0.0f };
+
+    SDL_Vertex verts[4];
+    verts[0].position = { p0.x, p0.y };
+    verts[0].color    = col;
+    verts[0].tex_coord = zero;
+    verts[1].position = { p1.x, p1.y };
+    verts[1].color    = col;
+    verts[1].tex_coord = zero;
+    verts[2].position = { p2.x, p2.y };
+    verts[2].color    = col;
+    verts[2].tex_coord = zero;
+    verts[3].position = { p3.x, p3.y };
+    verts[3].color    = col;
+    verts[3].tex_coord = zero;
+
+    // SDL_RenderGeometry multiplies vertex colors by the renderer's current
+    // draw color, so make sure the modulation is white/opaque.
+    SDL_SetRenderDrawColor(renderer_, 255, 255, 255, 255);
+
+    int indices[6] = { 0, 1, 2, 0, 2, 3 };
+    SDL_Texture* tex = whiteTexture_ ? whiteTexture_ : NULL;
+    if (!SDL_RenderGeometry(renderer_, tex, verts, 4, indices, 6)) {
+        fprintf(stderr, "[FILLAFFINE] SDL_RenderGeometry failed: %s\n", SDL_GetError());
+    }
+}
+
+void SDLBackend::fillQuad3D(const Vec2& p0, const Vec2& p1, const Vec2& p2,
+                            const Vec2& p3, float z, const Color& color) {
+    (void)z;
+    if (!renderer_) return;
+
+    // GPU path: draw the general quadrilateral as two triangles via
+    // SDL_RenderGeometry. The caller is responsible for depth ordering.
+    SDL_FColor col = toSDLColor(color);
+    SDL_FPoint zero = { 0.0f, 0.0f };
+
+    SDL_Vertex verts[4];
+    verts[0].position = { p0.x, p0.y };
+    verts[0].color    = col;
+    verts[0].tex_coord = zero;
+    verts[1].position = { p1.x, p1.y };
+    verts[1].color    = col;
+    verts[1].tex_coord = zero;
+    verts[2].position = { p2.x, p2.y };
+    verts[2].color    = col;
+    verts[2].tex_coord = zero;
+    verts[3].position = { p3.x, p3.y };
+    verts[3].color    = col;
+    verts[3].tex_coord = zero;
+
+    SDL_SetRenderDrawColor(renderer_, 255, 255, 255, 255);
+
+    int indices[6] = { 0, 1, 2, 0, 2, 3 };
+    SDL_Texture* tex = whiteTexture_ ? whiteTexture_ : NULL;
+    if (!SDL_RenderGeometry(renderer_, tex, verts, 4, indices, 6)) {
+        fprintf(stderr, "[FILLQUAD] SDL_RenderGeometry failed: %s\n", SDL_GetError());
+    }
 }
 
 } // namespace domi

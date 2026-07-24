@@ -17,6 +17,7 @@ struct ComponentTypeMask {
     ComponentTypeMask& withLight() { mask |= 16; return *this; }
     ComponentTypeMask& withScript() { mask |= 32; return *this; }
     ComponentTypeMask& withAudio() { mask |= 64; return *this; }
+    ComponentTypeMask& withVoxel() { mask |= 128; return *this; }
 };
 
 class World {
@@ -73,6 +74,7 @@ private:
     std::vector<LightComponent> lights_;
     std::vector<ScriptComponent> scripts_;
     std::vector<AudioSourceComponent> audios_;
+    std::vector<VoxelComponent> voxels_;
 
     template<typename T> T* getComponentPool();
     template<typename T> size_t getPoolSize() const;

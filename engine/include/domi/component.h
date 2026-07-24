@@ -4,6 +4,7 @@
 #include "domi/types.h"
 #include "domi/math.h"
 #include <string>
+#include <vector>
 
 namespace domi {
 
@@ -59,6 +60,15 @@ struct AudioSourceComponent {
     bool playOnStart;
     float volume;
     AudioSourceComponent() : loop(false), playOnStart(false), volume(1.0f) {}
+};
+
+struct VoxelComponent {
+    int width;
+    int height;
+    int depth;
+    std::vector<uint8_t> voxels; // palette indices, 0 = empty voxel
+    std::vector<Color> palette;  // index 0 reserved for empty
+    VoxelComponent() : width(0), height(0), depth(0) {}
 };
 
 } // namespace domi
