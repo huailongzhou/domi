@@ -1,4 +1,4 @@
-#include "domi/draw_batch.h"
+#include "domi/render/draw_batch.h"
 
 namespace domi {
 
@@ -88,7 +88,6 @@ void DrawBatch::ellipse(float x, float y, float rx, float ry, float rotation,
 }
 
 void DrawBatch::drawMaterial(float x, float y, const Material& material) {
-    // Captured by pointer, not copied: the material must outlive run().
     push([x, y, &material](Canvas2D* canvas) {
         canvas->drawMaterialCached(x, y, material);
     });
@@ -105,19 +104,12 @@ void DrawBatch::end3D() {
 void DrawBatch::drawMesh3D(float cx, float cy, float scale,
                            float rotX, float rotY, float rotZ,
                            const Mesh3D& mesh) {
-    // Captured by pointer, not copied: the mesh must outlive run().
     push([cx, cy, scale, rotX, rotY, rotZ, &mesh](Canvas2D* canvas) {
         canvas->drawMesh3D(cx, cy, scale, rotX, rotY, rotZ,
                            mesh.vertices.data(), (int)mesh.vertices.size(),
                            mesh.indices.data(), mesh.triangleCount(),
                            mesh.color);
     });
-}
-
-void DrawBatch::run(Canvas2D* canvas) const {
-    for (size_t i = 0; i < ops_.size(); ++i) {
-        ops_[i](canvas);
-    }
 }
 
 } // namespace domi

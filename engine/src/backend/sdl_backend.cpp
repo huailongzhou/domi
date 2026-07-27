@@ -1,6 +1,6 @@
 #include "domi/backend/sdl_backend.h"
-#include "domi/render_texture.h"
-#include "domi/material.h"
+#include "domi/render/render_texture.h"
+#include "domi/render/material.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
 #include <cstring>
@@ -461,6 +461,11 @@ void SDLBackend::destroy() {
         materialCache_->textures.clear();
     }
 
+    for (size_t i = 0; i < mutableTextures_.size(); ++i) {
+        if (mutableTextures_[i]) SDL_DestroyTexture(mutableTextures_[i]);
+    }
+    mutableTextures_.clear();
+
     if (whiteTexture_) {
         SDL_DestroyTexture(whiteTexture_);
         whiteTexture_ = NULL;
@@ -709,9 +714,21 @@ void SDLBackend::drawMaterial(float x, float y, void* handle,
 }
 
 void SDLBackend::destroyMaterial(void* handle) {
-    if (!materialCache_ || !handle) return;
+    if (!handle) return;
 
     SDL_Texture* tex = static_cast<SDL_Texture*>(handle);
+
+    // Mutable textures are not in the content-hash cache.
+    for (std::vector<SDL_Texture*>::iterator it = mutableTextures_.begin();
+         it != mutableTextures_.end(); ++it) {
+        if (*it == tex) {
+            SDL_DestroyTexture(tex);
+            mutableTextures_.erase(it);
+            return;
+        }
+    }
+
+    if (!materialCache_) return;
     for (auto it = materialCache_->textures.begin();
          it != materialCache_->textures.end(); ++it) {
         if (it->second.texture == tex) {
@@ -723,6 +740,60 @@ void SDLBackend::destroyMaterial(void* handle) {
             return;
         }
     }
+}
+
+void* SDLBackend::createMutableTexture(int width, int height) {
+    if (!renderer_ || width <= 0 || height <= 0) return NULL;
+
+    SDL_Texture* tex = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_RGBA32,
+                                         SDL_TEXTUREACCESS_STREAMING,
+                                         width, height);
+    if (!tex) return NULL;
+
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+
+    // Start fully transparent so undrawn regions never sample garbage.
+    std::vector<uint8_t> zeros((size_t)width * height * 4, 0);
+    SDL_UpdateTexture(tex, NULL, zeros.data(), width * 4);
+
+    mutableTextures_.push_back(tex);
+    return tex;
+}
+
+void SDLBackend::updateTextureRegion(void* handle, int x, int y, int w, int h,
+                                     const void* rgbaPixels) {
+    if (!renderer_ || !handle || !rgbaPixels || w <= 0 || h <= 0) return;
+
+    SDL_Rect rect = { x, y, w, h };
+    SDL_UpdateTexture(static_cast<SDL_Texture*>(handle), &rect,
+                      rgbaPixels, w * 4);
+}
+
+void SDLBackend::drawMaterialRegion(float x, float y, void* handle,
+                                    int srcX, int srcY, int srcW, int srcH,
+                                    const Color& tint,
+                                    float angle, float centerX, float centerY,
+                                    float scaleX, float scaleY) {
+    if (!renderer_ || !handle || srcW <= 0 || srcH <= 0) return;
+
+    SDL_Texture* tex = static_cast<SDL_Texture*>(handle);
+
+    SDL_FRect src = { (float)srcX, (float)srcY, (float)srcW, (float)srcH };
+    SDL_FRect dst = { x, y, srcW * scaleX, srcH * scaleY };
+    SDL_FPoint center = { centerX, centerY };
+
+    uint8_t tr = (uint8_t)(tint.r * 255.0f);
+    uint8_t tg = (uint8_t)(tint.g * 255.0f);
+    uint8_t tb = (uint8_t)(tint.b * 255.0f);
+    uint8_t ta = (uint8_t)(tint.a * 255.0f);
+    SDL_SetTextureColorMod(tex, tr, tg, tb);
+    SDL_SetTextureAlphaMod(tex, ta);
+
+    SDL_RenderTextureRotated(renderer_, tex, &src, &dst, angle, &center,
+                             SDL_FLIP_NONE);
+
+    SDL_SetTextureColorMod(tex, 255, 255, 255);
+    SDL_SetTextureAlphaMod(tex, 255);
 }
 
 void* SDLBackend::createRenderTarget(int width, int height,

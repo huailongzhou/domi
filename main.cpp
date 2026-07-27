@@ -1,6 +1,6 @@
-#include "domi/app.h"
-#include "domi/scene_manager.h"
-#include "domi/script.h"
+#include "domi/core/app.h"
+#include "domi/scene/scene_manager.h"
+#include "domi/script/script.h"
 #include "demo/menu_scene.h"
 #include <cstdio>
 

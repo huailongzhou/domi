@@ -1,8 +1,8 @@
 #ifndef DOMI_BACKEND_RENDER_BACKEND_H
 #define DOMI_BACKEND_RENDER_BACKEND_H
 
-#include "domi/math.h"
-#include "domi/types.h"
+#include "domi/core/math.h"
+#include "domi/core/types.h"
 #include <vector>
 
 namespace domi {
@@ -105,7 +105,34 @@ public:
                               float scaleX = 1.0f, float scaleY = 1.0f) = 0;
 
     // Destroy a cached material texture and remove it from the cache.
+    // Also accepts handles from createMutableTexture().
     virtual void destroyMaterial(void* handle) = 0;
+
+    // -----------------------------------------------------------------
+    // Mutable textures (e.g. font glyph atlases)
+    // -----------------------------------------------------------------
+
+    // Create an empty RGBA8888 texture that can be updated in place via
+    // updateTextureRegion(). Unlike uploadMaterial() the result is NOT
+    // deduplicated by content, so callers always get their own texture.
+    // Destroy with destroyMaterial(). Handles left alive are cleaned up when
+    // the backend itself is destroyed.
+    virtual void* createMutableTexture(int width, int height) = 0;
+
+    // Update a sub-region of a mutable texture with tightly packed
+    // RGBA8888 pixels (R, G, B, A byte order, pitch == w * 4).
+    virtual void updateTextureRegion(void* handle, int x, int y, int w, int h,
+                                     const void* rgbaPixels) = 0;
+
+    // Draw a sub-region of a material texture at (x, y) at the region's
+    // native size, tinted by a multiplicative color modulation.
+    // Rotation is in radians around (centerX, centerY) relative to (x, y).
+    virtual void drawMaterialRegion(float x, float y, void* handle,
+                                    int srcX, int srcY, int srcW, int srcH,
+                                    const Color& tint,
+                                    float angle = 0.0f,
+                                    float centerX = 0.0f, float centerY = 0.0f,
+                                    float scaleX = 1.0f, float scaleY = 1.0f) = 0;
 
     // -----------------------------------------------------------------
     // Render target management

@@ -1,7 +1,7 @@
 #include "voxel_renderer.h"
-#include "domi/canvas2d.h"
-#include "domi/component.h"
-#include "domi/ecs.h"
+#include "domi/render/canvas2d.h"
+#include "domi/ecs/component.h"
+#include "domi/ecs/ecs.h"
 #include <algorithm>
 #include <cmath>
 

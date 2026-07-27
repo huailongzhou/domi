@@ -1,4 +1,4 @@
-#include "domi/thread_pool.h"
+#include "domi/core/thread_pool.h"
 
 namespace domi {
 

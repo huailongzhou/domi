@@ -1,4 +1,4 @@
-#include "domi/math.h"
+#include "domi/core/math.h"
 #include <cmath>
 
 namespace domi {

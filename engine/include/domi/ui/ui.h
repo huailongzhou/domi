@@ -1,9 +1,9 @@
 #ifndef DOMI_UI_UI_H
 #define DOMI_UI_UI_H
 
-#include "domi/math.h"
-#include "domi/canvas2d.h"
-#include "domi/input.h"
+#include "domi/core/math.h"
+#include "domi/render/canvas2d.h"
+#include "domi/input/input.h"
 #include <functional>
 #include <string>
 #include <vector>

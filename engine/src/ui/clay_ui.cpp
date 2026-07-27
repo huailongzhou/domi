@@ -1,7 +1,7 @@
 #include "domi/ui/clay_ui.h"
 
 #include "clay_layout.h"
-#include "domi/canvas2d.h"
+#include "domi/render/canvas2d.h"
 #include "domi/ui/font.h"
 
 #include <cstdio>

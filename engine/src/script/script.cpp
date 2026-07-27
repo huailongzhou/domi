@@ -1,9 +1,9 @@
-#include "domi/script.h"
-#include "domi/app.h"
-#include "domi/input.h"
-#include "domi/ecs.h"
-#include "domi/component.h"
-#include "domi/thread_pool.h"
+#include "domi/script/script.h"
+#include "domi/core/app.h"
+#include "domi/input/input.h"
+#include "domi/ecs/ecs.h"
+#include "domi/ecs/component.h"
+#include "domi/core/thread_pool.h"
 #include "wasm_export.h"
 #include <cstdio>
 #include <cstring>

@@ -1,7 +1,7 @@
 #ifndef DEMO_MENU_SCENE_H
 #define DEMO_MENU_SCENE_H
 
-#include "domi/scene.h"
+#include "domi/scene/scene.h"
 
 namespace domi {
 class ScriptSystem;
@@ -9,7 +9,7 @@ class World;
 class ClayUI;
 }
 
-// Entry menu with two buttons that switch to the 2D or 3D demo scenes.
+// Entry menu with buttons that switch to the demo scenes.
 // The menu UI is declared with the Clay layout library (Scene::buildClayUI).
 class MenuScene : public domi::Scene {
 public:

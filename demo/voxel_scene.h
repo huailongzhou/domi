@@ -1,7 +1,7 @@
 #ifndef DEMO_VOXEL_SCENE_H
 #define DEMO_VOXEL_SCENE_H
 
-#include "domi/scene.h"
+#include "domi/scene/scene.h"
 
 namespace domi {
 class ScriptSystem;

@@ -1,7 +1,7 @@
 #ifndef TOOLS_GENERATORS_3D_MESH3D_H
 #define TOOLS_GENERATORS_3D_MESH3D_H
 
-#include "domi/math.h"
+#include "domi/core/math.h"
 #include <vector>
 
 namespace domi {

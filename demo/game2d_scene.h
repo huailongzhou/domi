@@ -1,11 +1,11 @@
 #ifndef DEMO_GAME2D_SCENE_H
 #define DEMO_GAME2D_SCENE_H
 
-#include "domi/scene.h"
-#include "domi/types.h"
-#include "domi/math.h"
-#include "domi/material.h"
-#include "domi/camera2d.h"
+#include "domi/scene/scene.h"
+#include "domi/core/types.h"
+#include "domi/core/math.h"
+#include "domi/render/material.h"
+#include "domi/render/camera2d.h"
 #include <map>
 #include <string>
 #include <vector>

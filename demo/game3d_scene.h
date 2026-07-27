@@ -1,8 +1,8 @@
 #ifndef DEMO_GAME3D_SCENE_H
 #define DEMO_GAME3D_SCENE_H
 
-#include "domi/scene.h"
-#include "domi/types.h"
+#include "domi/scene/scene.h"
+#include "domi/core/types.h"
 #include <vector>
 
 namespace domi {

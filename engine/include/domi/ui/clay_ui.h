@@ -1,7 +1,7 @@
 #ifndef DOMI_UI_CLAY_UI_H
 #define DOMI_UI_CLAY_UI_H
 
-#include "domi/math.h"
+#include "domi/core/math.h"
 #include <map>
 #include <string>
 

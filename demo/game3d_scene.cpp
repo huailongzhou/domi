@@ -1,12 +1,12 @@
 #include "game3d_scene.h"
 
-#include "domi/app.h"
-#include "domi/ecs.h"
-#include "domi/component.h"
-#include "domi/input.h"
-#include "domi/math.h"
-#include "domi/scene_manager.h"
-#include "domi/render_node.h"
+#include "domi/core/app.h"
+#include "domi/ecs/ecs.h"
+#include "domi/ecs/component.h"
+#include "domi/input/input.h"
+#include "domi/core/math.h"
+#include "domi/scene/scene_manager.h"
+#include "domi/render/render_node.h"
 #include "game2d_scene.h"
 #include <cstdio>
 #include <cstdlib>

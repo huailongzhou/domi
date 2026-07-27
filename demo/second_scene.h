@@ -1,8 +1,8 @@
 #ifndef DEMO_SECOND_SCENE_H
 #define DEMO_SECOND_SCENE_H
 
-#include "domi/scene.h"
-#include "domi/types.h"
+#include "domi/scene/scene.h"
+#include "domi/core/types.h"
 
 namespace domi {
 class ScriptSystem;

@@ -1,18 +1,21 @@
 #include "domi/ui/font.h"
-#include "domi/canvas2d.h"
-#include "domi/material.h"
+#include "domi/render/canvas2d.h"
 #include <ft2build.h>
 #include FT_FREETYPE_H
-#include <cstring>
+#include <cstdio>
+#include <utility>
 #include <vector>
 
 namespace domi {
 
 Font::Font()
-    : library_(nullptr), face_(nullptr), pixelSize_(16) {
+    : library_(nullptr), face_(nullptr), pixelSize_(16),
+      atlas_(nullptr), atlasW_(0), atlasH_(0),
+      shelfX_(0), shelfY_(0), shelfH_(0), atlasFull_(false) {
 }
 
 Font::~Font() {
+    // The atlas texture belongs to the backend and is released with it.
     if (face_) {
         FT_Done_Face(face_);
         face_ = nullptr;
@@ -66,16 +69,6 @@ int Font::lineHeight() const {
     return face_->size->metrics.height >> 6;
 }
 
-std::string Font::makeKey(const char* text, const Color& color) {
-    std::string key(text);
-    key.push_back('|');
-    key.append(reinterpret_cast<const char*>(&color.r), sizeof(float));
-    key.append(reinterpret_cast<const char*>(&color.g), sizeof(float));
-    key.append(reinterpret_cast<const char*>(&color.b), sizeof(float));
-    key.append(reinterpret_cast<const char*>(&color.a), sizeof(float));
-    return key;
-}
-
 void Font::measure(const char* text, float* outWidth, float* outHeight) const {
     if (!face_ || !text) {
         if (outWidth) *outWidth = 0.0f;
@@ -97,65 +90,105 @@ void Font::measure(const char* text, float* outWidth, float* outHeight) const {
     if (outHeight) *outHeight = static_cast<float>(lineHeight());
 }
 
+bool Font::ensureAtlas(Canvas2D* canvas) {
+    if (atlas_ || atlasFull_) return atlas_ != nullptr;
+    if (!canvas) return false;
+
+    // Smallest power-of-two atlas whose per-glyph cells fit the printable
+    // ASCII range with room to spare.
+    const int cellW = pixelSize_ + 2;
+    const int cellH = pixelSize_ + 6;
+    int size = 128;
+    while (size < 4096 && (size / cellW) * (size / cellH) < 96) {
+        size *= 2;
+    }
+
+    atlas_ = canvas->createMutableTexture(size, size);
+    if (!atlas_) {
+        atlasFull_ = true;  // do not retry every frame
+        fprintf(stderr, "[Font] failed to create glyph atlas\n");
+        return false;
+    }
+    atlasW_ = atlasH_ = size;
+    return true;
+}
+
+const Font::Glyph* Font::glyphFor(Canvas2D* canvas, unsigned char c) {
+    std::unordered_map<unsigned char, Glyph>::iterator it = glyphs_.find(c);
+    if (it != glyphs_.end()) return &it->second;
+    if (!face_ || atlasFull_) return nullptr;
+    if (!ensureAtlas(canvas)) return nullptr;
+
+    if (FT_Load_Char(face_, c, FT_LOAD_RENDER) != 0) {
+        return nullptr;
+    }
+    FT_GlyphSlot g = face_->glyph;
+
+    Glyph gl;
+    gl.w = static_cast<int>(g->bitmap.width);
+    gl.h = static_cast<int>(g->bitmap.rows);
+    gl.bearingX = g->bitmap_left;
+    gl.bearingY = g->bitmap_top;
+    gl.advance = static_cast<int>(g->advance.x >> 6);
+    gl.atlasX = 0;
+    gl.atlasY = 0;
+
+    if (gl.w > 0 && gl.h > 0) {
+        // Shelf packing with a 1px gutter between cells.
+        if (shelfX_ + gl.w + 1 > atlasW_) {
+            shelfX_ = 0;
+            shelfY_ += shelfH_ + 1;
+            shelfH_ = 0;
+        }
+        if (shelfY_ + gl.h + 1 > atlasH_) {
+            atlasFull_ = true;
+            fprintf(stderr, "[Font] glyph atlas full (%dpx font)\n", pixelSize_);
+            return nullptr;
+        }
+        gl.atlasX = shelfX_;
+        gl.atlasY = shelfY_;
+        if (gl.h > shelfH_) shelfH_ = gl.h;
+        shelfX_ += gl.w + 1;
+
+        // White RGB + coverage alpha; the draw-time tint supplies the color.
+        std::vector<uint8_t> rgba((size_t)gl.w * gl.h * 4);
+        const uint8_t* src = g->bitmap.buffer;
+        const int srcPitch = g->bitmap.pitch;
+        for (int row = 0; row < gl.h; ++row) {
+            uint8_t* dst = rgba.data() + (size_t)row * gl.w * 4;
+            const uint8_t* s = src + (size_t)row * srcPitch;
+            for (int col = 0; col < gl.w; ++col) {
+                dst[col * 4 + 0] = 255;
+                dst[col * 4 + 1] = 255;
+                dst[col * 4 + 2] = 255;
+                dst[col * 4 + 3] = s[col];
+            }
+        }
+        canvas->updateTextureRegion(atlas_, gl.atlasX, gl.atlasY,
+                                    gl.w, gl.h, rgba.data());
+    }
+
+    return &glyphs_.insert(std::make_pair(c, gl)).first->second;
+}
+
 void Font::drawText(Canvas2D* canvas, float x, float y,
                     const char* text, const Color& color) {
     if (!canvas || !face_ || !text || !*text) return;
 
-    // Check Canvas2D's key-based material cache first.
-    std::string key = makeKey(text, color);
-    if (canvas->checkMaterial(key.c_str())) {
-        canvas->drawMaterial(key.c_str(), x, y);
-        return;
-    }
-
-    float measureW, measureH;
-    measure(text, &measureW, &measureH);
-    if (measureW <= 0.0f || measureH <= 0.0f) return;
-
-    const int width = static_cast<int>(measureW);
-    const int height = lineHeight();
     const int base = ascender();
-
-    std::vector<uint8_t> rgba(width * height * 4, 0);
-
-    int penX = 0;
+    float penX = x;
     for (const char* p = text; *p; ++p) {
         unsigned char c = static_cast<unsigned char>(*p);
-        if (FT_Load_Char(face_, c, FT_LOAD_RENDER) != 0) {
-            continue;
+        const Glyph* gl = glyphFor(canvas, c);
+        if (!gl) continue;
+        if (gl->w > 0 && gl->h > 0) {
+            float dx = penX + static_cast<float>(gl->bearingX);
+            float dy = y + static_cast<float>(base - gl->bearingY);
+            canvas->drawMaterialRegion(atlas_, gl->atlasX, gl->atlasY,
+                                       gl->w, gl->h, dx, dy, color);
         }
-        FT_GlyphSlot g = face_->glyph;
-        const int dstX = penX + g->bitmap_left;
-        const int dstY = base - g->bitmap_top;
-        const uint8_t* src = g->bitmap.buffer;
-        const int srcPitch = g->bitmap.pitch;
-        const int gw = static_cast<int>(g->bitmap.width);
-        const int gh = static_cast<int>(g->bitmap.rows);
-
-        for (int row = 0; row < gh; ++row) {
-            int sy = dstY + row;
-            if (sy < 0 || sy >= height) continue;
-            for (int col = 0; col < gw; ++col) {
-                int sx = dstX + col;
-                if (sx < 0 || sx >= width) continue;
-                uint8_t a = src[row * srcPitch + col];
-                if (a == 0) continue;
-                size_t idx = (sy * width + sx) * 4;
-                rgba[idx + 0] = static_cast<uint8_t>(color.a * 255.0f * a / 255.0f);
-                rgba[idx + 1] = static_cast<uint8_t>(color.r * 255.0f);
-                rgba[idx + 2] = static_cast<uint8_t>(color.g * 255.0f);
-                rgba[idx + 3] = static_cast<uint8_t>(color.b * 255.0f);
-            }
-        }
-
-        penX += static_cast<int>(g->advance.x >> 6);
+        penX += static_cast<float>(gl->advance);
     }
-
-    Material material(width, height, PixelFormat::ARGB8888);
-    material.pixels = std::move(rgba);
-
-    canvas->uploadMaterial(key.c_str(), material);
-    canvas->drawMaterial(key.c_str(), x, y);
 }
 
 } // namespace domi

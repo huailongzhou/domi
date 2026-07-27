@@ -46,7 +46,6 @@ add_library(domi_engine STATIC
     engine/src/render/render_queue.cpp
     engine/src/render/renderer.cpp
     engine/src/render/render_texture.cpp
-    engine/src/render/render_command_buffer.cpp
     engine/src/render/render_list.cpp
     engine/src/render/draw_batch.cpp
     engine/src/render/pass/geometry_pass.cpp
@@ -113,6 +112,7 @@ add_executable(domi_game
     demo/game2d_scene.cpp
     demo/game3d_scene.cpp
     demo/menu_scene.cpp
+    demo/physics_scene.cpp
     demo/second_scene.cpp
     demo/voxel_scene.cpp
 )

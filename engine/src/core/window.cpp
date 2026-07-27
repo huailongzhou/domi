@@ -1,4 +1,4 @@
-#include "domi/window.h"
+#include "domi/core/window.h"
 #include "domi/backend/window_backend.h"
 
 namespace domi {

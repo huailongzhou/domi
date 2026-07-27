@@ -1,4 +1,4 @@
-#include "domi/input.h"
+#include "domi/input/input.h"
 #include "domi/backend/input_backend.h"
 #include <cstdio>
 

@@ -1,6 +1,6 @@
-#include "domi/scene_loader.h"
-#include "domi/render_node.h"
-#include "domi/material.h"
+#include "domi/scene/scene_loader.h"
+#include "domi/render/render_node.h"
+#include "domi/render/material.h"
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -57,6 +57,7 @@ std::unique_ptr<GroupNode> SceneLoader::load(const char* path) {
 std::unique_ptr<GroupNode> SceneLoader::loadFromJson(const json& doc) {
     ids_.clear();
     materialNodes_.clear();
+    leaves_.clear();
 
     if (!doc.contains("root")) {
         fprintf(stderr, "[SCENE_LOADER] document has no \"root\" node\n");
@@ -114,9 +115,15 @@ std::unique_ptr<RenderNode> SceneLoader::buildNode(const json& j) {
         buildChildren(j, *view);
         node = std::move(view);
     } else if (type == "rect") {
-        node.reset(new RectNode(getFloat(j, "x"), getFloat(j, "y"),
-                                getFloat(j, "w"), getFloat(j, "h"),
-                                getColor(j, "color")));
+        RectNode* rect = new RectNode(getFloat(j, "x"), getFloat(j, "y"),
+                                      getFloat(j, "w"), getFloat(j, "h"),
+                                      getColor(j, "color"));
+        BuiltLeaf leaf;
+        leaf.type = "rect";
+        leaf.node = rect;
+        leaf.rect = rect;
+        leaves_.push_back(leaf);
+        node.reset(rect);
     } else if (type == "material") {
         const std::string name = j.value("material", "");
         const Material* material = resolveMaterial(name);
@@ -129,6 +136,11 @@ std::unique_ptr<RenderNode> SceneLoader::buildNode(const json& j) {
                                                  j.value("centered", false));
         matNode->setCastShadow(j.value("castShadow", true));
         materialNodes_.push_back(std::make_pair(name, matNode));
+        BuiltLeaf leaf;
+        leaf.type = "material";
+        leaf.node = matNode;
+        leaf.material = matNode;
+        leaves_.push_back(leaf);
         node.reset(matNode);
     } else if (type == "path") {
         std::unique_ptr<PathNode> path(new PathNode());
@@ -164,9 +176,9 @@ std::unique_ptr<RenderNode> SceneLoader::buildNode(const json& j) {
         if (j.contains("lineWidth")) line->setLineWidth(j["lineWidth"].get<float>());
         node = std::move(line);
     } else if (type == "ellipse") {
-        std::unique_ptr<EllipseNode> ellipse(new EllipseNode(
+        EllipseNode* ellipse = new EllipseNode(
             getFloat(j, "x"), getFloat(j, "y"),
-            getFloat(j, "rx"), getFloat(j, "ry")));
+            getFloat(j, "rx"), getFloat(j, "ry"));
         if (j.contains("fill")) ellipse->setFillColor(getColor(j, "fill"));
         if (j.contains("stroke")) ellipse->setStrokeColor(getColor(j, "stroke"));
         if (j.contains("lineWidth")) ellipse->setLineWidth(j["lineWidth"].get<float>());
@@ -176,7 +188,12 @@ std::unique_ptr<RenderNode> SceneLoader::buildNode(const json& j) {
                             arc[2].get<float>(),
                             arc.size() > 3 ? arc[3].get<bool>() : false);
         }
-        node = std::move(ellipse);
+        BuiltLeaf leaf;
+        leaf.type = "ellipse";
+        leaf.node = ellipse;
+        leaf.ellipse = ellipse;
+        leaves_.push_back(leaf);
+        node.reset(ellipse);
     } else {
         std::unordered_map<std::string, NodeFactory>::const_iterator it =
             factories_.find(type);

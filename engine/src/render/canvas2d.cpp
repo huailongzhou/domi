@@ -1,6 +1,6 @@
-#include "domi/canvas2d.h"
+#include "domi/render/canvas2d.h"
 #include "domi/backend/render_backend.h"
-#include "domi/render_texture.h"
+#include "domi/render/render_texture.h"
 #include "domi/ui/font.h"
 #include <cmath>
 #include <algorithm>
@@ -477,6 +477,39 @@ void Canvas2D::drawMaterial(const char* key, float x, float y) {
         return;
     }
     backend_->drawMaterial(p.x, p.y, handle, angle, centerX, centerY, sx, sy);
+}
+
+void* Canvas2D::createMutableTexture(int width, int height) {
+    if (!backend_) return NULL;
+    return backend_->createMutableTexture(width, height);
+}
+
+void Canvas2D::updateTextureRegion(void* handle, int x, int y, int w, int h,
+                                   const void* rgbaPixels) {
+    if (!backend_) return;
+    // Apply immediately (not queued): glyph uploads happen while recording,
+    // and the queued draws that sample them always flush afterwards.
+    backend_->updateTextureRegion(handle, x, y, w, h, rgbaPixels);
+}
+
+void Canvas2D::drawMaterialRegion(void* handle, int srcX, int srcY,
+                                  int srcW, int srcH,
+                                  float x, float y, const Color& tint) {
+    if (!backend_ || !handle) return;
+
+    float tx, ty, angle, sx, sy;
+    state_.transform.decompose(&tx, &ty, &angle, &sx, &sy);
+    Vec2 p = applyTransform(x, y);
+    float centerX = tx - p.x;
+    float centerY = ty - p.y;
+
+    if (batching_) {
+        queue_.drawMaterialRegion(p.x, p.y, handle, srcX, srcY, srcW, srcH,
+                                  tint, angle, centerX, centerY, sx, sy);
+        return;
+    }
+    backend_->drawMaterialRegion(p.x, p.y, handle, srcX, srcY, srcW, srcH,
+                                 tint, angle, centerX, centerY, sx, sy);
 }
 
 void Canvas2D::drawTexture(float x, float y, RenderTexture* texture) {

@@ -1,6 +1,6 @@
-#include "domi/scene.h"
-#include "domi/render_node.h"
-#include "domi/render_list.h"
+#include "domi/scene/scene.h"
+#include "domi/render/render_node.h"
+#include "domi/render/render_list.h"
 
 namespace domi {
 

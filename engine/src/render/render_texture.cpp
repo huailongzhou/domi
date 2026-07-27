@@ -1,4 +1,4 @@
-#include "domi/render_texture.h"
+#include "domi/render/render_texture.h"
 
 namespace domi {
 

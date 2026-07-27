@@ -1,8 +1,8 @@
 #ifndef TOOLS_GENERATORS_MATERIAL_GENERATOR_H
 #define TOOLS_GENERATORS_MATERIAL_GENERATOR_H
 
-#include "domi/material.h"
-#include "domi/math.h"
+#include "domi/render/material.h"
+#include "domi/core/math.h"
 #include <cstdint>
 #include <vector>
 

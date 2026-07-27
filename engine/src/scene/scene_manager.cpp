@@ -1,7 +1,7 @@
-#include "domi/scene_manager.h"
-#include "domi/ecs.h"
-#include "domi/script.h"
-#include "domi/render_list.h"
+#include "domi/scene/scene_manager.h"
+#include "domi/ecs/ecs.h"
+#include "domi/script/script.h"
+#include "domi/render/render_list.h"
 #include <cstdio>
 
 namespace domi {

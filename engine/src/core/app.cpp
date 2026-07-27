@@ -1,13 +1,14 @@
-#include "domi/app.h"
-#include "domi/input.h"
-#include "domi/script.h"
-#include "domi/render.h"
-#include "domi/audio.h"
-#include "domi/scene_manager.h"
-#include "domi/thread_pool.h"
+#include "domi/core/app.h"
+#include "domi/input/input.h"
+#include "domi/script/script.h"
+#include "domi/render/render.h"
+#include "domi/audio/audio.h"
+#include "domi/scene/scene_manager.h"
+#include "domi/core/thread_pool.h"
 #include "domi/backend/sdl_backend.h"
 #include <SDL3/SDL.h>
 #include <cstdio>
+#include <cstdlib>
 #include <thread>
 
 namespace domi {
@@ -91,10 +92,38 @@ bool App::init(const AppConfig& config) {
 void App::run() {
     uint64_t lastTime = SDL_GetTicksNS();
     const uint64_t nsPerSec = 1000000000ULL;
+    const double nsPerMs = 1000000.0;
 
     double fpsAccumulator = 0.0;
     int fpsFrames = 0;
     double fpsTimer = 0.0;
+
+    // Optional frame-time logging for perf diagnosis: set DOMI_FRAME_LOG to a
+    // file path (or "1" for frame_log.csv in the working directory) to record
+    // per-phase frame times as CSV. As a fallback (e.g. when env vars cannot
+    // be passed through the launch method), creating an empty file named
+    // "domi_frame_log.enable" next to the executable also enables logging.
+    FILE* frameLog = NULL;
+    const char* frameLogEnv = getenv("DOMI_FRAME_LOG");
+    const bool frameLogFileTrigger = fopen("domi_frame_log.enable", "r") != NULL;
+    if ((frameLogEnv && frameLogEnv[0]) || frameLogFileTrigger) {
+        const char* path = (frameLogEnv && frameLogEnv[0] &&
+                            !(frameLogEnv[0] == '1' && frameLogEnv[1] == '\0'))
+                               ? frameLogEnv : "frame_log.csv";
+        frameLog = fopen(path, "w");
+        if (frameLog) {
+            const char* rendererName = "unknown";
+            if (backend_ && backend_->getNativeRenderer()) {
+                const char* n = SDL_GetRendererName(
+                    static_cast<SDL_Renderer*>(backend_->getNativeRenderer()));
+                if (n) rendererName = n;
+            }
+            fprintf(frameLog, "# renderer: %s\n", rendererName);
+            fprintf(frameLog, "frame,t_ms,input_ms,update_ms,render_ms,dt_ms\n");
+            fflush(frameLog);
+        }
+    }
+    const uint64_t runStart = SDL_GetTicksNS();
 
     while (running_) {
         uint64_t now = SDL_GetTicksNS();
@@ -118,8 +147,10 @@ void App::run() {
             }
         }
 
+        const uint64_t t0 = SDL_GetTicksNS();
         input_->update();
         processEvents();
+        const uint64_t t1 = SDL_GetTicksNS();
 
         fixedAccumulator_ += dt;
         while (fixedAccumulator_ >= fixedTime_) {
@@ -128,8 +159,25 @@ void App::run() {
         }
 
         update(dt);
+        const uint64_t t2 = SDL_GetTicksNS();
+
         render();
+        const uint64_t t3 = SDL_GetTicksNS();
+
+        if (frameLog) {
+            fprintf(frameLog, "%llu,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+                    (unsigned long long)frameCount_,
+                    (double)(t0 - runStart) / nsPerMs,
+                    (double)(t1 - t0) / nsPerMs,
+                    (double)(t2 - t1) / nsPerMs,
+                    (double)(t3 - t2) / nsPerMs,
+                    dt * 1000.0);
+            // Flush often early on so data survives a hard kill mid-run.
+            if (frameCount_ < 600 || frameCount_ % 60 == 0) fflush(frameLog);
+        }
     }
+
+    if (frameLog) fclose(frameLog);
 }
 
 void App::processEvents() {

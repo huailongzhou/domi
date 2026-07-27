@@ -1,11 +1,13 @@
 #include "editor_scene.h"
 
-#include "domi/app.h"
-#include "domi/render.h"
-#include "domi/canvas2d.h"
-#include "domi/render_node.h"
-#include "domi/scene_function.h"
-#include "domi/material_io.h"
+#include "domi/core/app.h"
+#include "domi/render/render.h"
+#include "domi/render/canvas2d.h"
+#include "domi/render/render_node.h"
+#include "domi/scene/scene_function.h"
+#include "domi/render/material_io.h"
+#include "domi/physics/physics.h"
+#include <cmath>
 #include "tree_generator.h"
 #include "cloud_generator.h"
 #include "rock_generator.h"
@@ -242,12 +244,17 @@ void EditorScene::load(domi::World* world, domi::ScriptSystem* script) {
 
 void EditorScene::unload(domi::World* world, domi::ScriptSystem* script) {
     (void)world; (void)script;
+    stopPhysicsPlay();
     setRootNode(nullptr);
     clearSelection();
 }
 
 void EditorScene::update(double dt) {
-    (void)dt;
+    if (physicsPlaying_) {
+        physics_.step(dt);
+        syncPhysicsVisuals();
+    }
+
     // Refresh the texture cache for materials regenerated since last frame.
     // Done here (before render, after the previous frame was flushed) so the
     // re-upload never destroys a texture still referenced by pending draw
@@ -289,7 +296,9 @@ void EditorScene::loadFile(const std::string& path) {
     }
     doc_ = std::move(doc);
     filePath_ = opened;
+    stopPhysicsPlay();
     loadShadowSettings();
+    loadPhysicsSettings();
     ensureMaterialsSection();
     generateMaterials();
     clearSelection();
@@ -501,6 +510,246 @@ void EditorScene::saveShadowSettings() {
     doc_["shadowLightDir"] = { shadowLightDir_.x, shadowLightDir_.y };
 }
 
+void EditorScene::loadPhysicsSettings() {
+    physicsEnabled_ = doc_.value("physicsEnabled", true);
+    physicsGravityX_ = 0.0f;
+    physicsGravityY_ = 980.0f;
+    if (doc_.contains("physicsGravity") && doc_["physicsGravity"].is_array() &&
+        doc_["physicsGravity"].size() >= 2) {
+        physicsGravityX_ = doc_["physicsGravity"][0].get<float>();
+        physicsGravityY_ = doc_["physicsGravity"][1].get<float>();
+    }
+}
+
+void EditorScene::savePhysicsSettings() {
+    doc_["physicsEnabled"] = physicsEnabled_;
+    doc_["physicsGravity"] = { physicsGravityX_, physicsGravityY_ };
+}
+
+// static
+bool EditorScene::nodeHasCollider(const nlohmann::json& node) {
+    if (!node.contains("physics") || !node["physics"].is_object()) return false;
+    return node["physics"].value("enabled", false);
+}
+
+// static
+void EditorScene::ensureColliderDefaults(nlohmann::json& node) {
+    if (!node.contains("physics") || !node["physics"].is_object()) {
+        node["physics"] = json::object();
+    }
+    json& p = node["physics"];
+    if (!p.contains("enabled")) p["enabled"] = true;
+    if (!p.contains("bodyType")) p["bodyType"] = "dynamic";
+    if (!p.contains("density")) p["density"] = 1.0f;
+    if (!p.contains("friction")) p["friction"] = 0.4f;
+    if (!p.contains("restitution")) p["restitution"] = 0.1f;
+    if (!p.contains("isSensor")) p["isSensor"] = false;
+    if (!p.contains("fixedRotation")) p["fixedRotation"] = false;
+}
+
+void EditorScene::collectPhysicsLeaves(nlohmann::json& node,
+                                       std::vector<nlohmann::json*>& out) {
+    const std::string type = node.value("type", "");
+    if (type == "rect" || type == "ellipse" || type == "material") {
+        out.push_back(&node);
+    }
+    if (node.contains("children") && node["children"].is_array()) {
+        json& children = node["children"];
+        for (size_t i = 0; i < children.size(); ++i) {
+            collectPhysicsLeaves(children[i], out);
+        }
+    }
+}
+
+void EditorScene::stopPhysicsPlay() {
+    // Restore authoring poses captured when play started.
+    if (physicsPlaying_) {
+        for (size_t i = 0; i < physicsBindings_.size(); ++i) {
+            PhysicsBinding& b = physicsBindings_[i];
+            if (!b.jsonNode) continue;
+            nlohmann::json& n = *b.jsonNode;
+            const std::string type = n.value("type", "");
+            if (type == "rect") {
+                n["x"] = b.restX - b.restW * 0.5f;
+                n["y"] = b.restY - b.restH * 0.5f;
+            } else if (type == "ellipse") {
+                n["x"] = b.restX;
+                n["y"] = b.restY;
+            } else if (type == "material") {
+                if (b.centered) {
+                    n["x"] = b.restX;
+                    n["y"] = b.restY;
+                } else {
+                    n["x"] = b.restX - b.restW * 0.5f;
+                    n["y"] = b.restY - b.restH * 0.5f;
+                }
+            }
+        }
+    }
+    physicsPlaying_ = false;
+    physicsBindings_.clear();
+    physics_.shutdown();
+}
+
+void EditorScene::startPhysicsPlay() {
+    if (!physicsEnabled_) return;
+    if (!doc_.contains("root")) return;
+
+    physics_.shutdown();
+    physicsBindings_.clear();
+    physics_.init(physicsGravityX_, physicsGravityY_);
+    physicsPlaying_ = true;
+    rebuildTree();
+    fprintf(stderr, "[EDITOR] Physics play started (%zu bodies)\n",
+            physicsBindings_.size());
+}
+
+void EditorScene::rebuildPhysicsBindings(domi::SceneLoader& loader) {
+    physicsBindings_.clear();
+    if (!physicsEnabled_ || !doc_.contains("root")) return;
+
+    std::vector<nlohmann::json*> leaves;
+    collectPhysicsLeaves(doc_["root"], leaves);
+    const std::vector<domi::SceneLoader::BuiltLeaf>& built = loader.leaves();
+    if (leaves.size() != built.size()) {
+        fprintf(stderr, "[EDITOR] Physics leaf count mismatch json=%zu built=%zu\n",
+                leaves.size(), built.size());
+    }
+    const size_t n = leaves.size() < built.size() ? leaves.size() : built.size();
+
+    for (size_t i = 0; i < n; ++i) {
+        nlohmann::json* jn = leaves[i];
+        if (!nodeHasCollider(*jn)) continue;
+
+        const domi::SceneLoader::BuiltLeaf& bl = built[i];
+        PhysicsBinding b;
+        b.jsonNode = jn;
+        b.rect = bl.rect;
+        b.ellipse = bl.ellipse;
+        b.material = bl.material;
+        b.isMaterial = (bl.material != NULL);
+        b.isCircle = (bl.ellipse != NULL);
+
+        float x0, y0, x1, y1;
+        if (!nodeBounds(*jn, x0, y0, x1, y1)) continue;
+        b.restW = x1 - x0;
+        b.restH = y1 - y0;
+        const float cx = (x0 + x1) * 0.5f;
+        const float cy = (y0 + y1) * 0.5f;
+        b.restX = cx;
+        b.restY = cy;
+
+        if (b.isMaterial && b.material) {
+            b.centered = b.material->isCentered();
+        }
+
+        if (!physicsPlaying_) {
+            // Keep binding only for debug draw of colliders while editing.
+            physicsBindings_.push_back(b);
+            continue;
+        }
+
+        const json& p = (*jn)["physics"];
+        const std::string bodyType = p.value("bodyType", "dynamic");
+
+        domi::BodyDef def;
+        def.x = cx;
+        def.y = cy;
+        def.width = b.restW;
+        def.height = b.restH;
+        def.shape = b.isCircle ? domi::ShapeType::Circle : domi::ShapeType::Box;
+        if (bodyType == "static") def.type = domi::BodyType::Static;
+        else if (bodyType == "kinematic") def.type = domi::BodyType::Kinematic;
+        else def.type = domi::BodyType::Dynamic;
+        def.density = p.value("density", 1.0f);
+        def.friction = p.value("friction", 0.4f);
+        def.restitution = p.value("restitution", 0.1f);
+        def.isSensor = p.value("isSensor", false);
+        def.fixedRotation = p.value("fixedRotation", false);
+        def.linearDamping = p.value("linearDamping", 0.1f);
+        def.angularDamping = p.value("angularDamping", 0.2f);
+        def.categoryBits = domi::CollisionCategory::Default;
+        if (def.type == domi::BodyType::Static) {
+            def.categoryBits = domi::CollisionCategory::Static;
+        }
+        def.maskBits = domi::CollisionCategory::All;
+
+        b.body = physics_.createBody(def);
+        physicsBindings_.push_back(b);
+    }
+}
+
+void EditorScene::syncPhysicsVisuals() {
+    for (size_t i = 0; i < physicsBindings_.size(); ++i) {
+        PhysicsBinding& b = physicsBindings_[i];
+        if (!b.body) continue;
+
+        domi::Vec2 p = domi::PhysicsSystem::getPosition(b.body);
+        // float angle = domi::PhysicsSystem::getAngle(b.body); // visuals are AABB for now
+
+        if (b.rect) {
+            b.rect->setRect(p.x - b.restW * 0.5f, p.y - b.restH * 0.5f,
+                            b.restW, b.restH);
+        } else if (b.ellipse) {
+            b.ellipse->setCenter(p.x, p.y);
+        } else if (b.material) {
+            if (b.centered) {
+                b.material->setPosition(p.x, p.y);
+            } else {
+                b.material->setPosition(p.x - b.restW * 0.5f, p.y - b.restH * 0.5f);
+            }
+        }
+
+        }
+}
+
+void EditorScene::drawPhysicsDebug() const {
+    if (!physicsShowDebug_ || !physicsEnabled_) return;
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    for (size_t i = 0; i < physicsBindings_.size(); ++i) {
+        const PhysicsBinding& b = physicsBindings_[i];
+        float cx = b.restX;
+        float cy = b.restY;
+        float w = b.restW;
+        float h = b.restH;
+        if (b.body) {
+            domi::Vec2 p = domi::PhysicsSystem::getPosition(b.body);
+            cx = p.x;
+            cy = p.y;
+        } else if (b.jsonNode) {
+            float x0, y0, x1, y1;
+            if (nodeBounds(*b.jsonNode, x0, y0, x1, y1)) {
+                cx = (x0 + x1) * 0.5f;
+                cy = (y0 + y1) * 0.5f;
+                w = x1 - x0;
+                h = y1 - y0;
+            }
+        }
+
+        ImU32 col = IM_COL32(80, 220, 120, 200);
+        if (b.jsonNode && b.jsonNode->contains("physics")) {
+            const std::string bt = (*b.jsonNode)["physics"].value("bodyType", "dynamic");
+            if (bt == "static") col = IM_COL32(80, 160, 255, 200);
+            else if (bt == "kinematic") col = IM_COL32(255, 200, 80, 200);
+            if ((*b.jsonNode)["physics"].value("isSensor", false)) {
+                col = IM_COL32(255, 80, 220, 180);
+            }
+        }
+
+        if (b.isCircle) {
+            float sx, sy;
+            worldToScreen(cx, cy, sx, sy);
+            const float r = (w < h ? w : h) * 0.5f * camera_.zoom;
+            dl->AddCircle(ImVec2(sx, sy), r, col, 24, 2.0f);
+        } else {
+            float sx0, sy0, sx1, sy1;
+            worldToScreen(cx - w * 0.5f, cy - h * 0.5f, sx0, sy0);
+            worldToScreen(cx + w * 0.5f, cy + h * 0.5f, sx1, sy1);
+            dl->AddRect(ImVec2(sx0, sy0), ImVec2(sx1, sy1), col, 0.0f, 0, 2.0f);
+        }
+    }
+}
+
 // static
 bool EditorScene::findMaterialJson(nlohmann::json& node,
                                    const std::string& material,
@@ -568,6 +817,16 @@ void EditorScene::drawEditorShadows(domi::DrawBatch& batch) const {
 
 void EditorScene::rebuildTree() {
     using namespace domi;
+
+    // Playing: drop live bodies before the render tree (and node pointers) are replaced.
+    if (physicsPlaying_) {
+        physics_.shutdown();
+        physicsBindings_.clear();
+        physics_.init(physicsGravityX_, physicsGravityY_);
+    } else {
+        physicsBindings_.clear();
+    }
+
     SceneLoader loader;
     loader.setMaterialResolver([this](const std::string& name) -> const Material* {
         std::map<std::string, Material>::iterator it = materials_.find(name);
@@ -575,6 +834,7 @@ void EditorScene::rebuildTree() {
     });
     std::unique_ptr<GroupNode> root = loader.loadFromJson(doc_);
     refreshShadowCasters(loader);
+    rebuildPhysicsBindings(loader);
     if (root) {
         root->shadowLayer().addChild<CustomNode>(
             [this](DrawBatch& batch) { drawEditorShadows(batch); });
@@ -1071,11 +1331,54 @@ void EditorScene::panelProperties() {
         ImGui::Text("layer: %s", n.value("layer", "").c_str());
     }
 
-    if (changed) rebuildTree();
+    // Physics collider (rect / ellipse / material).
+    if (type == "rect" || type == "ellipse" || type == "material") {
+        ImGui::Separator();
+        ImGui::Text("Physics");
+        bool hasPhys = n.contains("physics") && n["physics"].is_object();
+        bool enabled = hasPhys && n["physics"].value("enabled", false);
+        if (ImGui::Checkbox("collider", &enabled)) {
+            if (enabled) {
+                ensureColliderDefaults(n);
+                n["physics"]["enabled"] = true;
+            } else if (hasPhys) {
+                n["physics"]["enabled"] = false;
+            }
+            changed = true;
+        }
+        if (enabled) {
+            ensureColliderDefaults(n);
+            json& p = n["physics"];
+            const char* bodyTypes[] = { "static", "kinematic", "dynamic" };
+            std::string cur = p.value("bodyType", "dynamic");
+            int bidx = 2;
+            for (int i = 0; i < 3; ++i) if (cur == bodyTypes[i]) bidx = i;
+            if (ImGui::Combo("body type", &bidx, bodyTypes, 3)) {
+                p["bodyType"] = bodyTypes[bidx];
+                changed = true;
+            }
+            changed |= dragFloat("density", p, "density", 0.05f);
+            changed |= dragFloat("friction", p, "friction", 0.05f);
+            changed |= dragFloat("restitution", p, "restitution", 0.05f);
+            bool sensor = p.value("isSensor", false);
+            if (ImGui::Checkbox("sensor", &sensor)) { p["isSensor"] = sensor; changed = true; }
+            bool fixedRot = p.value("fixedRotation", false);
+            if (ImGui::Checkbox("fixed rotation", &fixedRot)) {
+                p["fixedRotation"] = fixedRot;
+                changed = true;
+            }
+        }
+    }
+
+    if (changed) {
+        if (physicsPlaying_) stopPhysicsPlay();
+        rebuildTree();
+    }
 
     ImGui::Separator();
     if (ImGui::Button("Delete node")) {
         if (selParent_ && selIndex_ >= 0) {
+            if (physicsPlaying_) stopPhysicsPlay();
             selParent_->erase(selParent_->begin() + selIndex_);
             clearSelection();
             rebuildTree();
@@ -1142,6 +1445,60 @@ void EditorScene::panelMaterials() {
         generateMaterial(selectedMaterial_, spec);
         rebuildTree();
     }
+}
+
+void EditorScene::panelPhysics() {
+    bool enabled = physicsEnabled_;
+    if (ImGui::Checkbox("Physics enabled", &enabled)) {
+        physicsEnabled_ = enabled;
+        if (!enabled) stopPhysicsPlay();
+        savePhysicsSettings();
+        rebuildTree();
+    }
+
+    float g[2] = { physicsGravityX_, physicsGravityY_ };
+    if (ImGui::DragFloat2("Gravity (px/s^2)", g, 1.0f)) {
+        physicsGravityX_ = g[0];
+        physicsGravityY_ = g[1];
+        savePhysicsSettings();
+        if (physicsPlaying_) {
+            stopPhysicsPlay();
+            startPhysicsPlay();
+        }
+    }
+
+    ImGui::Checkbox("Show colliders", &physicsShowDebug_);
+
+    ImGui::Separator();
+    if (!physicsPlaying_) {
+        if (ImGui::Button("Play##phys") && physicsEnabled_) {
+            startPhysicsPlay();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Simulate dynamic bodies");
+    } else {
+        if (ImGui::Button("Stop##phys")) {
+            stopPhysicsPlay();
+            rebuildTree();
+        }
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "PLAYING (%zu)",
+                           physicsBindings_.size());
+        ImGui::TextDisabled("Stop restores original poses.");
+    }
+
+    ImGui::Separator();
+    int colliderCount = 0;
+    for (size_t i = 0; i < physicsBindings_.size(); ++i) {
+        if (physicsBindings_[i].jsonNode &&
+            nodeHasCollider(*physicsBindings_[i].jsonNode)) {
+            ++colliderCount;
+        }
+    }
+    ImGui::Text("Colliders: %d", colliderCount);
+    ImGui::TextWrapped(
+        "Select a rect/ellipse/material and enable 'collider' in Node Properties. "
+        "bodyType: static = ground/walls, dynamic = falls with gravity.");
 }
 
 void EditorScene::panelShadow() {
@@ -1315,6 +1672,10 @@ void EditorScene::drawEditor() {
             panelShadow();
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Physics")) {
+            panelPhysics();
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
     ImGui::End();
@@ -1342,7 +1703,8 @@ void EditorScene::drawEditor() {
         ImVec2(previewX_ + previewW_, previewY_ + previewH_),
         IM_COL32(90, 90, 90, 255));
 
-    if (!splitterActive) handlePreviewMouse();
+    if (!splitterActive && !physicsPlaying_) handlePreviewMouse();
     drawSelectionHighlight();
+    drawPhysicsDebug();
     drawNodeProperties();
 }

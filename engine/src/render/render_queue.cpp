@@ -1,4 +1,4 @@
-#include "domi/render_queue.h"
+#include "domi/render/render_queue.h"
 #include "domi/backend/render_backend.h"
 
 namespace domi {
@@ -9,10 +9,6 @@ RenderQueue::RenderQueue()
       currentLineWidth_(1.0f) {}
 
 RenderQueue::~RenderQueue() {}
-
-void RenderQueue::clear() {
-    ops_.clear();
-}
 
 void RenderQueue::fillPath(const std::vector<Vec2>& points, bool closed) {
     const Color color = currentFillColor_;
@@ -48,13 +44,18 @@ void RenderQueue::drawMaterial(float x, float y, void* handle,
     });
 }
 
-void RenderQueue::flush(IRenderBackend* backend) {
-    if (backend) {
-        for (size_t i = 0; i < ops_.size(); ++i) {
-            ops_[i](backend);
+void RenderQueue::drawMaterialRegion(float x, float y, void* handle,
+                                     int srcX, int srcY, int srcW, int srcH,
+                                     const Color& tint,
+                                     float angle, float centerX, float centerY,
+                                     float scaleX, float scaleY) {
+    push([=](IRenderBackend* backend) {
+        if (handle) {
+            backend->drawMaterialRegion(x, y, handle, srcX, srcY, srcW, srcH,
+                                        tint, angle, centerX, centerY,
+                                        scaleX, scaleY);
         }
-    }
-    clear();
+    });
 }
 
 } // namespace domi

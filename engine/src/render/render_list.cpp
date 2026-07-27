@@ -1,9 +1,8 @@
-#include "domi/render_list.h"
-#include "domi/canvas2d.h"
-#include "domi/camera2d.h"
-#include "domi/draw_batch.h"
-#include "domi/render_texture.h"
-#include <algorithm>
+#include "domi/render/render_list.h"
+#include "domi/render/canvas2d.h"
+#include "domi/render/camera2d.h"
+#include "domi/render/draw_batch.h"
+#include "domi/render/render_texture.h"
 #include <string>
 
 namespace domi {
@@ -102,8 +101,6 @@ void RenderList::ellipse(RenderLayer layer, float z, float x, float y,
 }
 
 void RenderList::drawMaterial(RenderLayer layer, float z, float x, float y, const Material& material) {
-    // Captured by pointer, not copied: the material must outlive the flush
-    // (scene-owned materials satisfy this — the list lives within a frame).
     add(layer, z, [x, y, &material](Canvas2D* canvas) {
         canvas->drawMaterialCached(x, y, material);
     });
@@ -175,15 +172,9 @@ void RenderList::flush(Canvas2D* canvas) {
 }
 
 void RenderList::flush(Canvas2D* canvas, const Camera2D* camera, RenderLayer worldUpTo) {
-    std::stable_sort(items_.begin(), items_.end(), [](const Item& a, const Item& b) {
-        if (a.layer != b.layer) {
-            return static_cast<int>(a.layer) < static_cast<int>(b.layer);
-        }
-        return a.z < b.z;
-    });
+    stream_.sort();
+    std::vector<Item>& items = stream_.items();
 
-    // Optional viewport crop: applied to world-space layers only. Set before
-    // the camera transform so the rect is in plain screen coordinates.
     bool clipActive = camera && camera->clip;
     if (clipActive) {
         canvas->setClipRect(camera->clipX, camera->clipY, camera->clipW, camera->clipH);
@@ -199,11 +190,9 @@ void RenderList::flush(Canvas2D* canvas, const Camera2D* camera, RenderLayer wor
         transformed = true;
     }
 
-    for (size_t i = 0; i < items_.size(); ++i) {
-        // Layers above worldUpTo are screen-space: pop the camera transform
-        // before replaying them. Since items are layer-sorted this happens
-        // at most once.
-        if (transformed && static_cast<int>(items_[i].layer) > static_cast<int>(worldUpTo)) {
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (transformed &&
+            static_cast<int>(items[i].key.layer) > static_cast<int>(worldUpTo)) {
             canvas->restore();
             transformed = false;
             if (clipActive) {
@@ -211,8 +200,8 @@ void RenderList::flush(Canvas2D* canvas, const Camera2D* camera, RenderLayer wor
                 clipActive = false;
             }
         }
-        if (items_[i].fn) {
-            items_[i].fn(canvas);
+        if (items[i].fn) {
+            items[i].fn(canvas);
         }
     }
 

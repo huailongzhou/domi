@@ -1,17 +1,22 @@
 #ifndef EDITOR_SCENE_H
 #define EDITOR_SCENE_H
 
-#include "domi/scene.h"
-#include "domi/scene_loader.h"
-#include "domi/material.h"
-#include "domi/camera2d.h"
-#include "domi/math.h"
-#include "domi/draw_batch.h"
+#include "domi/scene/scene.h"
+#include "domi/scene/scene_loader.h"
+#include "domi/render/material.h"
+#include "domi/render/camera2d.h"
+#include "domi/core/math.h"
+#include "domi/render/draw_batch.h"
+#include "domi/physics/physics.h"
 #include <map>
 #include <string>
 #include <vector>
 
-namespace domi { class MaterialNode; }
+namespace domi {
+class MaterialNode;
+class RectNode;
+class EllipseNode;
+}
 
 // A minimal scene editor: loads a scene JSON file (node tree + a
 // "materials" section describing procedural texture generators),
@@ -63,6 +68,31 @@ private:
     bool shadowEnabled_ = true;
     domi::Vec2 shadowLightDir_ = domi::Vec2(0.4f, -0.7f);
     std::vector<ShadowCaster> shadowCasters_;
+
+    // Physics preview: bodies bound to scene JSON leaves (rect/ellipse/material).
+    struct PhysicsBinding {
+        nlohmann::json* jsonNode;
+        b2Body* body;
+        domi::RectNode* rect;
+        domi::EllipseNode* ellipse;
+        domi::MaterialNode* material;
+        // Authoring pose (world pixels); restored when stopping play.
+        float restX, restY, restW, restH;
+        bool isCircle;
+        bool isMaterial;
+        bool centered; // material only
+        PhysicsBinding()
+            : jsonNode(NULL), body(NULL), rect(NULL), ellipse(NULL), material(NULL),
+              restX(0), restY(0), restW(0), restH(0),
+              isCircle(false), isMaterial(false), centered(false) {}
+    };
+    domi::PhysicsSystem physics_;
+    std::vector<PhysicsBinding> physicsBindings_;
+    bool physicsEnabled_ = true;
+    bool physicsPlaying_ = false;
+    bool physicsShowDebug_ = true;
+    float physicsGravityX_ = 0.0f;
+    float physicsGravityY_ = 980.0f;
 
     // Node selection: pointer into doc_ plus its parent array and index.
     nlohmann::json* selNode_;
@@ -136,6 +166,19 @@ private:
                                  float x, float y,
                                  nlohmann::json** out);
 
+    // Physics helpers.
+    void loadPhysicsSettings();
+    void savePhysicsSettings();
+    void stopPhysicsPlay();
+    void startPhysicsPlay();
+    void rebuildPhysicsBindings(domi::SceneLoader& loader);
+    void syncPhysicsVisuals();
+    void drawPhysicsDebug() const;
+    void collectPhysicsLeaves(nlohmann::json& node,
+                              std::vector<nlohmann::json*>& out);
+    static bool nodeHasCollider(const nlohmann::json& node);
+    static void ensureColliderDefaults(nlohmann::json& node);
+
     // Preview interaction helpers (called from drawEditor).
     void fitCamera();
     void updatePreviewLayout();
@@ -158,6 +201,7 @@ private:
     void panelProperties();
     void panelMaterials();
     void panelShadow();
+    void panelPhysics();
     void panelPalette();
     void initPalette();
     void dropPaletteMaterial(const std::string& genType, float wx, float wy);

@@ -1,13 +1,14 @@
 #include "menu_scene.h"
 
-#include "domi/app.h"
-#include "domi/input.h"
-#include "domi/scene_manager.h"
-#include "domi/render_node.h"
+#include "domi/core/app.h"
+#include "domi/input/input.h"
+#include "domi/scene/scene_manager.h"
+#include "domi/render/render_node.h"
 #include "domi/ui/clay_ui.h"
 #include "game2d_scene.h"
 #include "game3d_scene.h"
 #include "voxel_scene.h"
+#include "physics_scene.h"
 #include <cstdio>
 
 using namespace domi;
@@ -41,17 +42,17 @@ void MenuScene::load(World* world, ScriptSystem* script) {
 
     std::unique_ptr<GroupNode> root(new GroupNode());
     LayerView& background = root->backgroundLayer();
-    // Sorted by top edge: background (0), title bar (160), hint bars (560+).
+    // Sorted by top edge: background (0), title bar (120), hint bars.
     background.addChild<RectNode>(
         0.0f, 0.0f, 1280.0f, 720.0f, Color(0.08f, 0.08f, 0.12f)).sortByTop();
     background.addChild<RectNode>(
-        340.0f, 160.0f, 600.0f, 80.0f, Color(0.9f, 0.9f, 0.9f)).sortByTop();
+        340.0f, 100.0f, 600.0f, 70.0f, Color(0.9f, 0.9f, 0.9f)).sortByTop();
     background.addChild<RectNode>(
-        440.0f, 560.0f, 400.0f, 6.0f, Color(0.7f, 0.7f, 0.7f)).sortByTop();
+        440.0f, 620.0f, 400.0f, 6.0f, Color(0.7f, 0.7f, 0.7f)).sortByTop();
     background.addChild<RectNode>(
-        440.0f, 580.0f, 400.0f, 6.0f, Color(0.7f, 0.7f, 0.7f)).sortByTop();
+        440.0f, 640.0f, 400.0f, 6.0f, Color(0.7f, 0.7f, 0.7f)).sortByTop();
     background.addChild<RectNode>(
-        440.0f, 600.0f, 280.0f, 6.0f, Color(0.7f, 0.7f, 0.7f)).sortByTop();
+        440.0f, 660.0f, 280.0f, 6.0f, Color(0.7f, 0.7f, 0.7f)).sortByTop();
     setRootNode(std::move(root));
 }
 
@@ -65,8 +66,8 @@ bool MenuScene::buildClayUI(ClayUI& ui) {
     ClayUI::Box root;
     root.width = 1280.0f;
     root.height = 720.0f;
-    root.paddingT = 120; // nudge the stack below the title bar
-    root.childGap = 20;
+    root.paddingT = 90;
+    root.childGap = 14;
     ui.beginBox(root);
     menuButton(ui, "MENU_2D", "2D Game",
                Color(0.25f, 0.65f, 0.25f), Color(0.35f, 0.78f, 0.35f),
@@ -77,11 +78,15 @@ bool MenuScene::buildClayUI(ClayUI& ui) {
     menuButton(ui, "MENU_VOXEL", "Voxel Demo",
                Color(0.75f, 0.25f, 0.65f), Color(0.86f, 0.35f, 0.75f),
                Color(0.55f, 0.15f, 0.45f));
+    menuButton(ui, "MENU_PHYS", "Physics Demo",
+               Color(0.75f, 0.50f, 0.20f), Color(0.88f, 0.62f, 0.28f),
+               Color(0.55f, 0.35f, 0.12f));
     ui.endBox();
 
     if (ui.clicked("MENU_2D")) pendingChoice_ = 2;
     if (ui.clicked("MENU_3D")) pendingChoice_ = 3;
     if (ui.clicked("MENU_VOXEL")) pendingChoice_ = 4;
+    if (ui.clicked("MENU_PHYS")) pendingChoice_ = 5;
     return true;
 }
 
@@ -92,6 +97,7 @@ void MenuScene::update(double dt) {
     bool choose2D = pendingChoice_ == 2;
     bool choose3D = pendingChoice_ == 3;
     bool chooseVoxel = pendingChoice_ == 4;
+    bool choosePhys = pendingChoice_ == 5;
     pendingChoice_ = 0;
 
     if (input) {
@@ -101,6 +107,8 @@ void MenuScene::update(double dt) {
                    input->isKeyPressed(SDL_SCANCODE_KP_2);
         chooseVoxel = chooseVoxel || input->isKeyPressed(SDL_SCANCODE_3) ||
                       input->isKeyPressed(SDL_SCANCODE_KP_3);
+        choosePhys = choosePhys || input->isKeyPressed(SDL_SCANCODE_4) ||
+                     input->isKeyPressed(SDL_SCANCODE_KP_4);
     }
 
     if (choose2D) {
@@ -112,5 +120,8 @@ void MenuScene::update(double dt) {
     } else if (chooseVoxel) {
         fprintf(stderr, "[MENU] Starting voxel demo\n");
         App::instance().getSceneManager()->setNext(new VoxelScene());
+    } else if (choosePhys) {
+        fprintf(stderr, "[MENU] Starting physics demo\n");
+        App::instance().getSceneManager()->setNext(new PhysicsScene());
     }
 }

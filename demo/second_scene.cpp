@@ -1,12 +1,12 @@
 #include "second_scene.h"
 
-#include "domi/app.h"
-#include "domi/ecs.h"
-#include "domi/component.h"
-#include "domi/input.h"
-#include "domi/script.h"
-#include "domi/scene_manager.h"
-#include "domi/render_node.h"
+#include "domi/core/app.h"
+#include "domi/ecs/ecs.h"
+#include "domi/ecs/component.h"
+#include "domi/input/input.h"
+#include "domi/script/script.h"
+#include "domi/scene/scene_manager.h"
+#include "domi/render/render_node.h"
 #include "game2d_scene.h"
 
 using namespace domi;

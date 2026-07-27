@@ -1,12 +1,11 @@
-#include "domi/renderer.h"
+#include "domi/render/renderer.h"
 #include "domi/backend/render_backend.h"
-#include "domi/canvas2d.h"
-#include "domi/render_command_buffer.h"
-#include "domi/render_pass.h"
-#include "domi/scene_manager.h"
-#include "domi/scene.h"
-#include "domi/ecs.h"
-#include "domi/component.h"
+#include "domi/render/canvas2d.h"
+#include "domi/render/render_pass.h"
+#include "domi/scene/scene_manager.h"
+#include "domi/scene/scene.h"
+#include "domi/ecs/ecs.h"
+#include "domi/ecs/component.h"
 #include <cstdio>
 
 namespace domi {
@@ -38,7 +37,7 @@ LightComponent* findDirectionalLight(World* world) {
 } // anonymous namespace
 
 Renderer::Renderer()
-    : backend_(NULL), canvas_(NULL), cmd_(NULL),
+    : backend_(NULL), canvas_(NULL),
       width_(0), height_(0) {}
 
 Renderer::~Renderer() {
@@ -52,7 +51,6 @@ bool Renderer::init(IRenderBackend* backend, int width, int height) {
 
     backend_ = backend;
     canvas_ = new Canvas2D(backend_);
-    cmd_ = new CommandBuffer(canvas_);
 
     if (!createBuffers(width, height)) {
         shutdown();
@@ -74,8 +72,6 @@ void Renderer::shutdown() {
     shadowMask_.destroy();
     lightBuffer_.destroy();
 
-    delete cmd_;
-    cmd_ = NULL;
     delete canvas_;
     canvas_ = NULL;
 
@@ -101,9 +97,8 @@ bool Renderer::createBuffers(int w, int h) {
 }
 
 void Renderer::render(World* world, SceneManager* sceneManager, float fps) {
-    if (!backend_ || !canvas_ || !cmd_) return;
+    if (!backend_ || !canvas_) return;
 
-    // Ensure we start on the default target with a clean state.
     canvas_->setRenderTarget(NULL);
     backend_->clear(Color(0.0f, 0.0f, 0.0f, 1.0f));
 
@@ -113,7 +108,7 @@ void Renderer::render(World* world, SceneManager* sceneManager, float fps) {
     ctx.colorBuffer = &colorBuffer_;
     ctx.shadowMask = &shadowMask_;
     ctx.lightBuffer = &lightBuffer_;
-    ctx.finalBuffer = NULL; // final target is the screen
+    ctx.finalBuffer = NULL;
     ctx.world = world;
     ctx.scene = scene;
     ctx.camera = findActiveCamera(world);
@@ -126,10 +121,9 @@ void Renderer::render(World* world, SceneManager* sceneManager, float fps) {
     ctx.height = height_;
 
     for (size_t i = 0; i < passes_.size(); ++i) {
-        passes_[i]->record(*cmd_, ctx);
+        passes_[i]->record(*canvas_, ctx);
     }
 
-    // Submit remaining queued commands and present.
     canvas_->flush();
     if (prePresentHook_) prePresentHook_();
     backend_->present();

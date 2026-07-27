@@ -1,6 +1,6 @@
-#include "domi/app.h"
-#include "domi/render.h"
-#include "domi/scene_manager.h"
+#include "domi/core/app.h"
+#include "domi/render/render.h"
+#include "domi/scene/scene_manager.h"
 #include "domi/backend/sdl_backend.h"
 #include "editor_scene.h"
 

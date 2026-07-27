@@ -1,8 +1,8 @@
 #ifndef DOMI_VOXEL_RENDERER_H
 #define DOMI_VOXEL_RENDERER_H
 
-#include "domi/math.h"
-#include "domi/types.h"
+#include "domi/core/math.h"
+#include "domi/core/types.h"
 #include <vector>
 
 namespace domi {

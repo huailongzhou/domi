@@ -1,4 +1,4 @@
-#include "domi/ecs.h"
+#include "domi/ecs/ecs.h"
 
 namespace domi {
 
@@ -32,6 +32,7 @@ void World::clear() {
     scripts_.clear();
     audios_.clear();
     voxels_.clear();
+    rigidBodies_.clear();
     nextEntity_ = 1;
 }
 
@@ -48,6 +49,7 @@ std::vector<Entity> World::queryEntitiesWith(ComponentTypeMask mask) {
         if (e < scripts_.size() && !scripts_[e].wasmPath.empty()) has |= 32;
         if (e < audios_.size() && !audios_[e].path.empty()) has |= 64;
         if (e < voxels_.size() && voxels_[e].width > 0) has |= 128;
+        if (e < rigidBodies_.size() && rigidBodies_[e].body != NULL) has |= 256;
         if ((has & mask.mask) == mask.mask) result.push_back(e);
     }
     return result;
@@ -83,3 +85,7 @@ template<> void domi::World::ensureCapacity<domi::VoxelComponent>(Entity e) { if
 
 template<> domi::VoxelComponent* domi::World::getComponentPool<domi::VoxelComponent>() { return voxels_.empty() ? NULL : &voxels_[0]; }
 template<> size_t domi::World::getPoolSize<domi::VoxelComponent>() const { return voxels_.size(); }
+
+template<> domi::RigidBodyComponent* domi::World::getComponentPool<domi::RigidBodyComponent>() { return rigidBodies_.empty() ? NULL : &rigidBodies_[0]; }
+template<> size_t domi::World::getPoolSize<domi::RigidBodyComponent>() const { return rigidBodies_.size(); }
+template<> void domi::World::ensureCapacity<domi::RigidBodyComponent>(Entity e) { if (e >= rigidBodies_.size()) rigidBodies_.resize(e + 1); }

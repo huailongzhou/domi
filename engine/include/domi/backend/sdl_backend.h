@@ -81,6 +81,16 @@ public:
                       float scaleX = 1.0f, float scaleY = 1.0f) override;
     void destroyMaterial(void* handle) override;
 
+    void* createMutableTexture(int width, int height) override;
+    void updateTextureRegion(void* handle, int x, int y, int w, int h,
+                             const void* rgbaPixels) override;
+    void drawMaterialRegion(float x, float y, void* handle,
+                            int srcX, int srcY, int srcW, int srcH,
+                            const Color& tint,
+                            float angle = 0.0f,
+                            float centerX = 0.0f, float centerY = 0.0f,
+                            float scaleX = 1.0f, float scaleY = 1.0f) override;
+
     void* createRenderTarget(int width, int height,
                              RenderTextureFormat format) override;
     void destroyRenderTarget(void* handle) override;
@@ -144,6 +154,11 @@ private:
     bool audioInitialized_;
 
     std::unique_ptr<MaterialCache> materialCache_;
+
+    // Mutable textures (font atlases etc.): tracked separately from the
+    // content-hash cache so they are never deduplicated and can be freed
+    // wholesale on backend destruction.
+    std::vector<SDL_Texture*> mutableTextures_;
 
     // 3D software rasterizer state (moved here from Canvas2D so the SDL backend
     // owns all triangle rasterization code).

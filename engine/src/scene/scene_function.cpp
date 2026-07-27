@@ -1,5 +1,5 @@
-#include "domi/scene_function.h"
-#include "domi/draw_batch.h"
+#include "domi/scene/scene_function.h"
+#include "domi/render/draw_batch.h"
 
 namespace domi {
 
