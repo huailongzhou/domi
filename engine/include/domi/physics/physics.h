@@ -66,6 +66,8 @@ struct ContactInfo {
     bool isTouching;
     Vec2 normal;   // from A to B, pixel space (y-down)
     Vec2 point;    // contact point, pixels
+    Vec2 velA;     // pre-solve linear velocity of A, pixels/s (begin contacts)
+    Vec2 velB;     // pre-solve linear velocity of B, pixels/s (begin contacts)
 };
 
 struct RaycastHit {
@@ -117,9 +119,21 @@ public:
     static float getAngle(const b2Body* body); // radians, Box2D CCW
     static Vec2 getLinearVelocity(const b2Body* body);
     static void setPosition(b2Body* body, float x, float y);
+    // Set the body's rotation (radians), keeping its position.
+    static void setAngle(b2Body* body, float radians) {
+        if (body) body->SetTransform(body->GetPosition(), radians);
+    }
     static void setLinearVelocity(b2Body* body, float vx, float vy);
     static void applyForce(b2Body* body, float fx, float fy);
     static void applyImpulse(b2Body* body, float ix, float iy);
+
+    // Create a spring (distance) joint between two bodies at the given
+    // world-space anchor points (pixels). The rest length is the initial
+    // anchor distance. stiffness/damping map to Box2D's N/m and N*s/m.
+    // The joint is destroyed with the world.
+    b2Joint* createSpringJoint(b2Body* bodyA, b2Body* bodyB,
+                               float ax, float ay, float bx, float by,
+                               float stiffness, float damping);
 
     // Contacts from the last step (cleared at the start of each step).
     const std::vector<ContactInfo>& beginContacts() const { return beginContacts_; }

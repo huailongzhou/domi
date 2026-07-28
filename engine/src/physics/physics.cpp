@@ -32,6 +32,13 @@ ContactInfo makeContactInfo(b2Contact* contact, bool touching) {
     info.point = Vec2(
         PhysicsSystem::toPixels(manifold.points[0].x),
         PhysicsSystem::toPixels(manifold.points[0].y));
+
+    // Capture pre-solve velocities: after the step the solver has already
+    // absorbed the impact, so impact speeds are only available here.
+    b2Vec2 va = info.bodyA->GetLinearVelocity();
+    b2Vec2 vb = info.bodyB->GetLinearVelocity();
+    info.velA = Vec2(PhysicsSystem::toPixels(va.x), PhysicsSystem::toPixels(va.y));
+    info.velB = Vec2(PhysicsSystem::toPixels(vb.x), PhysicsSystem::toPixels(vb.y));
     return info;
 }
 } // namespace
@@ -294,6 +301,21 @@ void PhysicsSystem::applyForce(b2Body* body, float fx, float fy) {
 void PhysicsSystem::applyImpulse(b2Body* body, float ix, float iy) {
     if (!body) return;
     body->ApplyLinearImpulseToCenter(b2Vec2(toMeters(ix), toMeters(iy)), true);
+}
+
+b2Joint* PhysicsSystem::createSpringJoint(b2Body* bodyA, b2Body* bodyB,
+                                          float ax, float ay, float bx, float by,
+                                          float stiffness, float damping) {
+    if (!world_ || !bodyA || !bodyB) return NULL;
+
+    b2DistanceJointDef def;
+    def.Initialize(bodyA, bodyB,
+                   b2Vec2(toMeters(ax), toMeters(ay)),
+                   b2Vec2(toMeters(bx), toMeters(by)));
+    def.stiffness = stiffness;
+    def.damping = damping;
+    def.collideConnected = false;
+    return world_->CreateJoint(&def);
 }
 
 bool PhysicsSystem::areTouching(Entity a, Entity b) const {

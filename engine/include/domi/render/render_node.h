@@ -323,6 +323,10 @@ public:
     PathNode& bezierCurveTo(float cp1x, float cp1y, float cp2x, float cp2y, float x, float y);
     PathNode& closePath();
 
+    // Drop all recorded segments so the path can be re-recorded (e.g. when
+    // redrawing a dynamic shape every frame).
+    PathNode& clear() { segments_.clear(); return *this; }
+
     // The y range covers all recorded points, including curve control points.
     void getYRange(float& y1, float& y2) const override;
 
