@@ -401,7 +401,14 @@ void PhysicsScene::rebuildSceneGraph() {
 
     for (size_t i = 0; i < visuals_.size(); ++i) {
         BodyVisual& v = visuals_[i];
-        if (v.collected || !v.body) continue;
+        if (v.collected || !v.body) {
+            // Clear stale node pointers so needRebuild stops re-triggering;
+            // they point into the graph this rebuild is replacing.
+            v.rect = NULL;
+            v.ellipse = NULL;
+            v.path = NULL;
+            continue;
+        }
 
         Vec2 p = PhysicsSystem::getPosition(v.body);
         Color c = v.flashTimer > 0.0f ? v.flashColor : v.baseColor;
@@ -925,9 +932,10 @@ void PhysicsScene::update(double dt) {
     // Also if node pointers were invalidated by rebuild already cleared
     if (needRebuild) {
         rebuildSceneGraph();
-    } else {
-        syncVisuals();
     }
+    // Always sync: the player's PathNode quad is empty until syncVisuals
+    // records it, so it must run on rebuild frames too.
+    syncVisuals();
 
     syncSpringVisuals();
 }
